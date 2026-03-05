@@ -13,6 +13,7 @@ from .config import (
     AZURE_OPENAI_API_KEY,
     AZURE_OPENAI_ENDPOINT,
     AZURE_EMBED_DEPLOYMENT,
+    AZURE_OPENAI_API_VERSION,
 )
 
 _vectorstore = None
@@ -51,7 +52,7 @@ def init_rules_rag(force_reload: bool = False):
         azure_deployment=AZURE_EMBED_DEPLOYMENT,
         azure_endpoint=AZURE_OPENAI_ENDPOINT,
         api_key=AZURE_OPENAI_API_KEY,
-        api_version="2024-02-01",
+        api_version=AZURE_OPENAI_API_VERSION,
     )
 
     _vectorstore = Chroma.from_documents(
@@ -67,7 +68,7 @@ def init_rules_rag(force_reload: bool = False):
         azure_deployment=OPENAI_MODEL,
         azure_endpoint=AZURE_OPENAI_ENDPOINT,
         api_key=AZURE_OPENAI_API_KEY,
-        api_version="2024-02-01",
+        api_version=AZURE_OPENAI_API_VERSION,
         temperature=0,
     )
 
