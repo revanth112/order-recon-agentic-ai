@@ -35,6 +35,9 @@ def test_env(tmp_path, monkeypatch):
     # Reload repositories so it uses the reloaded db module
     import core.repositories as repo_module
     importlib.reload(repo_module)
+    # Reload services so it picks up the reloaded repositories
+    import core.services as services_module
+    importlib.reload(services_module)
 
     # 2. Isolated RAG Rules
     rules_dir = tmp_path / "rules"
@@ -318,6 +321,8 @@ def test_run_matcher_duplicate_billing(test_env):
     assert len(discrepancies_2) == 1
     assert discrepancies_2[0]["type"] == "DUPLICATE_BILLING"
     assert discrepancies_2[0]["already_reconciled_qty"] == 100.0
+    assert discrepancies_2[0]["invoice_qty"] == 50.0
+    assert discrepancies_2[0]["ordered_qty"] == 100.0
 
 
 def test_run_matcher_vendor_specific_tolerance(test_env):
@@ -428,6 +433,89 @@ def test_handle_exceptions_invalid_po_blocked(test_env):
         "type": "INVALID_PO",
         "product_code": None,
         "po_number": "PO-BAD",
+        "rule": "No matching rule found. Flag for manual review.",
+    }]
+    handle_exceptions(recon_id, discrepancies)
+
+    exceptions = repo.get_exceptions_for_reconciliation(recon_id)
+    assert len(exceptions) == 1
+    assert exceptions[0]["severity"] == "CRITICAL"
+    assert exceptions[0]["auto_action"] == "BLOCKED"
+
+
+def test_run_matcher_currency_mismatch(test_env):
+    """Should flag CURRENCY_MISMATCH and set overall status to MISMATCH when currencies differ."""
+    from core.services import run_matcher
+    from core import repositories as repo
+
+    # Insert an order with EUR currency
+    conn = sqlite3.connect(test_env["db"])
+    conn.execute(
+        "INSERT INTO orders (po_number, vendor_id, vendor_name, status, currency) "
+        "VALUES ('PO-EUR', 'VEND-1', 'Test Vendor', 'OPEN', 'EUR')"
+    )
+    order_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.execute(
+        "INSERT INTO order_lines (order_id, line_number, product_code, description, ordered_qty, unit_price) "
+        "VALUES (?, 1, 'PROD-X', 'Part X', 50, 20.00)",
+        (order_id,),
+    )
+    conn.execute(
+        "INSERT INTO invoices (vendor_id, vendor_name, raw_json, status) "
+        "VALUES ('VEND-1', 'Test Vendor', '{}', 'MATCHING')"
+    )
+    invoice_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.commit()
+    conn.close()
+
+    repo.insert_invoice_lines(invoice_id, [{
+        "line_number": 1,
+        "product_code": "PROD-X",
+        "quantity": 50,
+        "unit_price": 20.00
+    }])
+
+    # Invoice says USD but order is EUR
+    extracted_data = {"vendor_id": "VEND-1", "po_number": "PO-EUR", "currency": "USD"}
+    recon_id, discrepancies = run_matcher(invoice_id, extracted_data)
+
+    currency_discrepancies = [d for d in discrepancies if d["type"] == "CURRENCY_MISMATCH"]
+    assert len(currency_discrepancies) == 1
+    assert currency_discrepancies[0]["invoice_currency"] == "USD"
+    assert currency_discrepancies[0]["order_currency"] == "EUR"
+
+    # Overall status must be MISMATCH even though the line quantities/prices matched
+    conn = sqlite3.connect(test_env["db"])
+    status = conn.execute(
+        "SELECT overall_status FROM reconciliations WHERE id = ?", (recon_id,)
+    ).fetchone()[0]
+    conn.close()
+    assert status == "MISMATCH"
+
+
+def test_handle_exceptions_currency_mismatch_blocked(test_env):
+    """CURRENCY_MISMATCH should produce CRITICAL/BLOCKED exception."""
+    from core.services import handle_exceptions
+    from core import repositories as repo
+    from datetime import datetime, timezone
+
+    conn = sqlite3.connect(test_env["db"])
+    conn.execute(
+        "INSERT INTO invoices (vendor_id, vendor_name, raw_json, status) "
+        "VALUES ('V-001', 'Acme', '{}', 'MATCHING')"
+    )
+    invoice_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.commit()
+    conn.close()
+
+    recon_id = repo.create_reconciliation(
+        invoice_id, "PO-EUR", datetime.now(timezone.utc).isoformat()
+    )
+    discrepancies = [{
+        "type": "CURRENCY_MISMATCH",
+        "product_code": None,
+        "invoice_currency": "USD",
+        "order_currency": "EUR",
         "rule": "No matching rule found. Flag for manual review.",
     }]
     handle_exceptions(recon_id, discrepancies)

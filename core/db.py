@@ -51,8 +51,8 @@ def init_db():
         invoice_number TEXT,
         vendor_id TEXT NOT NULL,
         vendor_name TEXT,
-        -- invoice_date and currency columns removed (never populated; migration note:
-        --   ALTER TABLE invoices DROP COLUMN invoice_date / currency on existing DBs if needed)
+        invoice_date TEXT,
+        currency TEXT DEFAULT 'USD',
         raw_json TEXT NOT NULL,
         extraction_confidence REAL,
         template_hash TEXT,

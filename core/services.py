@@ -1,6 +1,7 @@
 # core/services.py - Business logic called by LangGraph agent nodes
 import json
 import hashlib
+import logging
 import time
 from datetime import datetime, timezone
 from typing import Tuple
@@ -18,6 +19,12 @@ from .config import (
 )
 from . import repositories as repo
 from models.schemas import ExtractedInvoice, InvoiceLine
+
+logger = logging.getLogger(__name__)
+
+# Tiny multiplier buffer to absorb float rounding when comparing already-reconciled
+# quantities against ordered qty (e.g. 100.0000001 should not trigger duplicate billing)
+_DUPLICATE_BILLING_FLOAT_BUFFER = 1.001
 
 
 def _safe_ask_rules(question: str) -> str:
@@ -81,6 +88,7 @@ def run_extractor(invoice_id: int, invoice_json: dict) -> Tuple[dict, float]:
 
     lines = [line.dict() for line in extracted.line_items]
     repo.insert_invoice_lines(invoice_id, lines)
+    repo.update_invoice_extracted_fields(invoice_id, extracted.currency, extracted.invoice_date)
     repo.update_invoice_status(invoice_id, "MATCHING", extraction_confidence=confidence)
     return extracted.dict(), confidence
 
@@ -125,7 +133,24 @@ def run_matcher(invoice_id: int, extracted_data: dict) -> Tuple[int, list]:
         repo.update_reconciliation(recon_id, overall, 0.0, completed_at, latency_ms)
         return recon_id, discrepancies
 
-    # ── Step 2: Build SKU map scoped to THIS order only ───────────────────────
+    # ── Step 2: Currency check ────────────────────────────────────────────────
+    invoice_currency = (extracted_data.get("currency") or "USD").upper()
+    order_currency   = (order.get("currency")           or "USD").upper()
+    if invoice_currency != order_currency:
+        rule = _safe_ask_rules(
+            f"Invoice currency '{invoice_currency}' does not match "
+            f"order currency '{order_currency}' for PO '{po_number}' "
+            f"(vendor '{vendor_id}'). What should happen?"
+        )
+        discrepancies.append({
+            "type": "CURRENCY_MISMATCH",
+            "product_code": None,
+            "invoice_currency": invoice_currency,
+            "order_currency": order_currency,
+            "rule": rule,
+        })
+
+    # ── Step 3: Build SKU map scoped to THIS order only ───────────────────────
     order_lines   = repo.get_order_lines(order["id"])
     invoice_lines = repo.get_invoice_lines(invoice_id)
 
@@ -135,15 +160,14 @@ def run_matcher(invoice_id: int, extracted_data: dict) -> Tuple[int, list]:
         pcode = ol["product_code"]
         if pcode in order_map:
             # Keep first, log warning — shouldn't happen in clean data
-            import logging as _logging
-            _logging.getLogger(__name__).warning(
+            logger.warning(
                 "Duplicate product_code '%s' found in order %s — keeping first occurrence",
                 pcode, order["id"],
             )
             continue
         order_map[pcode] = ol
 
-    # ── Step 3, 4 & 5: Per-line matching ─────────────────────────────────────
+    # ── Step 4, 5 & 6: Per-line matching ─────────────────────────────────────
     # Get per-vendor tolerances, fall back to global config defaults
     vendor_tols = VENDOR_TOLERANCES.get(vendor_id, {})
     price_tol   = vendor_tols.get("price_pct", PRICE_TOLERANCE_PCT)
@@ -167,7 +191,7 @@ def run_matcher(invoice_id: int, extracted_data: dict) -> Tuple[int, list]:
 
         # DUPLICATE_BILLING — check already reconciled quantity
         already_reconciled = repo.get_already_reconciled_qty(ol["id"])
-        if already_reconciled + il["quantity"] > ol["ordered_qty"] * 1.001:  # tiny float buffer
+        if already_reconciled + il["quantity"] > ol["ordered_qty"] * _DUPLICATE_BILLING_FLOAT_BUFFER:
             rule = _safe_ask_rules(
                 f"Product '{pcode}': ordered_qty={ol['ordered_qty']}, "
                 f"already_reconciled={already_reconciled}, "
@@ -202,8 +226,8 @@ def run_matcher(invoice_id: int, extracted_data: dict) -> Tuple[int, list]:
                 # WITHIN_TOLERANCE — auto-approve but create audit trail
                 status = "WITHIN_TOLERANCE"
                 rule = (
-                    f"Within vendor tolerance (qty_tol={qty_tol:.0%}, "
-                    f"price_tol={price_tol:.0%}): "
+                    f"Within vendor tolerance (qty_tol={qty_tol:.2%}, "
+                    f"price_tol={price_tol:.2%}): "
                     f"qty_diff={qty_diff:+}, price_diff={price_diff:+.4f}"
                 )
                 discrepancies.append({
@@ -222,7 +246,7 @@ def run_matcher(invoice_id: int, extracted_data: dict) -> Tuple[int, list]:
                 f"(diff={qty_pct:.1%}), "
                 f"invoice price={il['unit_price']} vs order price={ol['unit_price']} "
                 f"(diff={price_pct:.1%}). "
-                f"Vendor tolerances: qty={qty_tol:.0%}, price={price_tol:.0%}. "
+                f"Vendor tolerances: qty={qty_tol:.2%}, price={price_tol:.2%}. "
                 "What rule applies?"
             )
             status = "OUT_OF_TOLERANCE"
@@ -246,7 +270,10 @@ def run_matcher(invoice_id: int, extracted_data: dict) -> Tuple[int, list]:
         d for d in discrepancies
         if d["type"] not in ("TOLERANCE_VARIANCE",)
     ]
-    if not hard_discrepancies:
+    # CURRENCY_MISMATCH always forces MISMATCH regardless of line results
+    if any(d["type"] == "CURRENCY_MISMATCH" for d in discrepancies):
+        overall = "MISMATCH"
+    elif not hard_discrepancies:
         overall = "MATCHED"
     elif len(hard_discrepancies) < len(invoice_lines):
         overall = "PARTIAL_MATCH"
@@ -270,6 +297,7 @@ def handle_exceptions(recon_id: int, discrepancies: list):
         "NO_MATCH":           ("CRITICAL", "BLOCKED"),
         "INVALID_PO":         ("CRITICAL", "BLOCKED"),
         "DUPLICATE_BILLING":  ("CRITICAL", "BLOCKED"),
+        "CURRENCY_MISMATCH":  ("CRITICAL", "BLOCKED"),
         "QUANTITY_MISMATCH":  ("WARNING",  "NEEDS_REVIEW"),
         "PRICE_MISMATCH":     ("WARNING",  "NEEDS_REVIEW"),
         "TOLERANCE_VARIANCE": ("INFO",     "AUTO_APPROVED"),

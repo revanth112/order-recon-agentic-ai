@@ -31,6 +31,16 @@ def update_invoice_status(invoice_id: int, status: str,
                          (status, invoice_id))
 
 
+def update_invoice_extracted_fields(invoice_id: int, currency: Optional[str],
+                                    invoice_date: Optional[str]):
+    """Persist currency and invoice_date extracted by the AI onto the invoice record."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE invoices SET currency=?, invoice_date=? WHERE id=?",
+            (currency, invoice_date, invoice_id),
+        )
+
+
 def get_invoice_by_id(invoice_id: int) -> Optional[dict]:
     with get_connection() as conn:
         row = conn.execute("SELECT * FROM invoices WHERE id=?",
@@ -49,6 +59,9 @@ def get_all_invoices() -> list:
 
 def insert_invoice_lines(invoice_id: int, lines: list[dict]):
     with get_connection() as conn:
+        # Use explicit .get() for each field so callers don't need to supply
+        # optional fields (description, tax_rate) — prevents binding errors
+        # from SQLite named parameters when keys are absent.
         conn.executemany(
             """INSERT INTO invoice_lines
                (invoice_id, line_number, product_code, description, quantity, unit_price, tax_rate)
