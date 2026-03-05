@@ -1,5 +1,6 @@
 # core/rules_rag.py - RAG over business rules and reconciliation guidelines
 from pathlib import Path
+from typing import List
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
 from langchain_openai import AzureOpenAIEmbeddings, AzureChatOpenAI
@@ -20,6 +21,12 @@ _vectorstore = None
 _qa_chain = None
 
 
+class AzureOpenAIEmbeddingsStringOnly(AzureOpenAIEmbeddings):
+    """
+    Subclass that bypasses tiktoken tokenization and sends plain strings directly
+    to Azure OpenAI Embeddings. Azure's text-embedding-ada-002 rejects token arrays
+    with 'Unsupported data type' — this forces string input instead.
+    """
 def _load_rules_docs() -> list[str]:
     """Load all markdown/txt files from the rules directory."""
     rules_path = Path(RULES_DIR)
