@@ -14,7 +14,7 @@ from core import repositories as repo
 from core import logger as pipeline_logger
 from core.services import compute_template_hash, start_invoice_pipeline
 from core.metrics import get_dashboard_metrics
-from core.config import RULES_DIR, RAG_PERSIST_DIR
+from core.config import RULES_DIR, RAG_PERSIST_DIR, azure_openai_client, OPENAI_MODEL
 from core.rules_rag import ask_rules, reload_rules
 from agents.graph import recon_graph
 from streamlit_app.log_viewer import render_log_viewer
@@ -255,6 +255,50 @@ if page == "Upload & Run Pipeline":
                 )
             else:
                 st.success("✅ Pipeline completed! Invoice fully matched — no discrepancies found.")
+
+            # ---- LLM one-line summary ----
+            try:
+                extracted   = final_state.get("extracted_data", {})
+                vendor_name = extracted.get("vendor_name") or invoice_json.get("vendor_name", "Unknown")
+                inv_number  = extracted.get("invoice_number") or "N/A"
+                po_number   = extracted.get("po_number") or "N/A"
+                n_lines     = len(extracted.get("line_items", []))
+
+                _MAX_DISC = 8
+                disc_items = [
+                    f"{d.get('type', 'UNKNOWN')} on {d.get('product_code') or 'N/A'}"
+                    for d in discrepancies[:_MAX_DISC]
+                ]
+                if len(discrepancies) > _MAX_DISC:
+                    disc_items.append(f"… +{len(discrepancies) - _MAX_DISC} more")
+                disc_summary = "; ".join(disc_items) if disc_items else "none"
+
+                summary_prompt = (
+                    f"You are an order reconciliation assistant. "
+                    f"Write exactly ONE concise sentence (≤25 words) summarising the result of this invoice reconciliation:\n"
+                    f"- Vendor: {vendor_name}\n"
+                    f"- Invoice #: {inv_number}\n"
+                    f"- PO: {po_number}\n"
+                    f"- Lines processed: {n_lines}\n"
+                    f"- Discrepancies: {disc_summary}\n"
+                    f"- Outcome: {outcome}\n"
+                    f"Respond with only the summary sentence, no prefix or label."
+                )
+
+                llm_resp = azure_openai_client.chat.completions.create(
+                    model=OPENAI_MODEL,
+                    messages=[{"role": "user", "content": summary_prompt}],
+                    max_tokens=60,
+                    temperature=0.3,
+                )
+                summary_text = llm_resp.choices[0].message.content.strip()
+                if summary_text:
+                    st.caption(f"💬 {summary_text}")
+            except Exception as _llm_err:
+                import logging as _logging
+                _logging.getLogger(__name__).debug(
+                    "LLM summary unavailable: %s", _llm_err
+                )  # best-effort; silently skip if LLM is unavailable
 
     # Show pipeline logs and results
     if "current_invoice_id" in st.session_state:
