@@ -2,11 +2,18 @@
 from pathlib import Path
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain_openai import AzureOpenAIEmbeddings, AzureChatOpenAI
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
-from .config import RULES_DIR, RAG_PERSIST_DIR, OPENAI_MODEL
+from .config import (
+    RULES_DIR,
+    RAG_PERSIST_DIR,
+    OPENAI_MODEL,
+    AZURE_OPENAI_API_KEY,
+    AZURE_OPENAI_ENDPOINT,
+    AZURE_EMBED_DEPLOYMENT,
+)
 
 _vectorstore = None
 _qa_chain = None
@@ -32,18 +39,37 @@ def init_rules_rag(force_reload: bool = False):
 
     raw_docs = _load_rules_docs()
     if not raw_docs:
-        raise FileNotFoundError(f"No rules files found in '{RULES_DIR}'. Add .md files first.")
+        raise FileNotFoundError(
+            f"No rules files found in '{RULES_DIR}'. Add .md files first."
+        )
 
     splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
     chunks = splitter.create_documents(raw_docs)
 
-    embeddings = OpenAIEmbeddings()
+    # Azure OpenAI Embeddings (uses text-embedding-ada-002 or your deployed model)
+    embeddings = AzureOpenAIEmbeddings(
+        azure_deployment=AZURE_EMBED_DEPLOYMENT,
+        azure_endpoint=AZURE_OPENAI_ENDPOINT,
+        api_key=AZURE_OPENAI_API_KEY,
+        api_version="2024-02-01",
+    )
+
     _vectorstore = Chroma.from_documents(
         documents=chunks,
         embedding=embeddings,
         persist_directory=RAG_PERSIST_DIR,
     )
+
     retriever = _vectorstore.as_retriever(search_kwargs={"k": 3})
+
+    # Azure Chat LLM via langchain_openai AzureChatOpenAI
+    llm = AzureChatOpenAI(
+        azure_deployment=OPENAI_MODEL,
+        azure_endpoint=AZURE_OPENAI_ENDPOINT,
+        api_key=AZURE_OPENAI_API_KEY,
+        api_version="2024-02-01",
+        temperature=0,
+    )
 
     prompt_template = PromptTemplate(
         input_variables=["context", "question"],
@@ -56,9 +82,6 @@ def init_rules_rag(force_reload: bool = False):
         ),
     )
 
-    llm = ChatOpenAI(model=OPENAI_MODEL, temperature=0)
-
-    # Modern LCEL chain - replaces deprecated RetrievalQA
     def format_docs(docs):
         return "\n\n".join(doc.page_content for doc in docs)
 
