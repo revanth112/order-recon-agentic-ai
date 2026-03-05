@@ -1,44 +1,66 @@
 # tests/test_rag.py
-# Unit tests for the RAG system (core/rules_rag.py)
-# All tests use mocks - NO Azure OpenAI API key required to run.
+# Integration tests for the RAG system (core/rules_rag.py)
+# Uses REAL Azure OpenAI API - requires .env to be configured.
+#
+# Run with:
+#   pytest tests/test_rag.py -v
 #
 # Test coverage:
-#   1. _load_rules_docs()    - loads .md and .txt files from rules dir
-#   2. _load_rules_docs()    - returns empty list if no files exist
-#   3. init_rules_rag()      - skips rebuild when chain already loaded
-#   4. init_rules_rag()      - raises FileNotFoundError when no docs found
-#   5. init_rules_rag()      - builds vectorstore and LCEL chain correctly
-#   6. ask_rules()           - auto-inits on first call
-#   7. ask_rules()           - calls chain.invoke() with the exact question
-#   8. ask_rules()           - always returns a string
-#   9. reload_rules()        - calls init_rules_rag(force_reload=True)
+#   1. _load_rules_docs()  - loads real .md and .txt files from rules dir
+#   2. _load_rules_docs()  - returns empty list if directory is empty
+#   3. init_rules_rag()    - skips rebuild when chain already loaded
+#   4. init_rules_rag()    - raises FileNotFoundError when no docs found
+#   5. init_rules_rag()    - builds real vectorstore + LCEL chain (hits Azure)
+#   6. ask_rules()         - returns a real non-empty string answer from Azure
+#   7. ask_rules()         - answer is relevant to the question asked
+#   8. ask_rules()         - auto-inits on first call (cold start)
+#   9. reload_rules()      - rebuilds the chain from scratch (force reload)
 
+import importlib
 import pytest
-from unittest.mock import MagicMock, patch
 
 
 # ---------------------------------------------------------------------------
-# Helper
+# Helpers
 # ---------------------------------------------------------------------------
 
 def _write_temp_rules(tmp_path, files: dict):
-    """Write fake rule files into a temp directory."""
+    """Write real rule content into a temp directory for isolated tests."""
     for name, content in files.items():
         (tmp_path / name).write_text(content, encoding="utf-8")
 
 
+SAMPLE_RULES = {
+    "price_rules.md": (
+        "# Price Matching Rule\n"
+        "Invoice unit price must match the PO unit price within 5% tolerance.\n"
+        "Deviations above 5% must be escalated to finance team for approval.\n"
+        "Rule Name: PRICE_TOLERANCE_5PCT\n"
+    ),
+    "qty_rules.md": (
+        "# Quantity Matching Rule\n"
+        "Invoice quantity must match ordered quantity within 5% tolerance.\n"
+        "Short shipments under 5% can be auto-approved.\n"
+        "Over-shipments must be flagged for return or credit note.\n"
+        "Rule Name: QTY_TOLERANCE_5PCT\n"
+    ),
+    "no_match_rules.txt": (
+        "NO_MATCH Rule: If a product code on the invoice does not exist in any\n"
+        "open Purchase Order, the line must be BLOCKED and raised as a\n"
+        "CRITICAL exception requiring immediate procurement review.\n"
+        "Rule Name: NO_MATCH_CRITICAL\n"
+    ),
+}
+
+
 # ---------------------------------------------------------------------------
-# 1 & 2 - _load_rules_docs()
+# 1 & 2 - _load_rules_docs() -- pure file I/O, no API needed
 # ---------------------------------------------------------------------------
 
 def test_load_rules_docs_reads_md_and_txt(tmp_path, monkeypatch):
-    """Should load content from both .md and .txt files in RULES_DIR."""
-    _write_temp_rules(tmp_path, {
-        "rule1.md": "# Price Rule\nInvoice price must match PO.",
-        "rule2.txt": "Quantity tolerance is 5%.",
-    })
+    """Should load content from all .md and .txt files in RULES_DIR."""
+    _write_temp_rules(tmp_path, SAMPLE_RULES)
 
-    import importlib
     import core.config as cfg
     monkeypatch.setattr(cfg, "RULES_DIR", str(tmp_path))
 
@@ -46,14 +68,14 @@ def test_load_rules_docs_reads_md_and_txt(tmp_path, monkeypatch):
     importlib.reload(rag)
 
     docs = rag._load_rules_docs()
-    assert len(docs) == 2
-    assert any("Price Rule" in d for d in docs)
-    assert any("Quantity tolerance" in d for d in docs)
+    assert len(docs) == 3
+    assert any("Price Matching Rule" in d for d in docs)
+    assert any("Quantity Matching Rule" in d for d in docs)
+    assert any("NO_MATCH Rule" in d for d in docs)
 
 
 def test_load_rules_docs_returns_empty_when_no_files(tmp_path, monkeypatch):
     """Should return an empty list when the rules directory is empty."""
-    import importlib
     import core.config as cfg
     monkeypatch.setattr(cfg, "RULES_DIR", str(tmp_path))
 
@@ -65,136 +87,189 @@ def test_load_rules_docs_returns_empty_when_no_files(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# 3 & 4 & 5 - init_rules_rag()
+# 3 - init_rules_rag() skips rebuild -- no API needed
 # ---------------------------------------------------------------------------
 
 def test_init_rules_rag_skips_if_already_initialised():
     """Should not rebuild chain if _qa_chain is already set."""
-    import importlib
     import core.rules_rag as rag
     importlib.reload(rag)
 
-    fake_chain = MagicMock()
-    rag._qa_chain = fake_chain
+    # Simulate an already-built chain with a sentinel object
+    sentinel = object()
+    rag._qa_chain = sentinel
 
-    with patch.object(rag, "_load_rules_docs") as mock_load:
-        rag.init_rules_rag(force_reload=False)
-        mock_load.assert_not_called()
-    assert rag._qa_chain is fake_chain
+    rag.init_rules_rag(force_reload=False)
+
+    # Chain must remain unchanged - no rebuild happened
+    assert rag._qa_chain is sentinel
 
 
-def test_init_rules_rag_raises_when_no_docs():
-    """Should raise FileNotFoundError when _load_rules_docs returns []."""
-    import importlib
+# ---------------------------------------------------------------------------
+# 4 - init_rules_rag() raises when no docs -- no API needed
+# ---------------------------------------------------------------------------
+
+def test_init_rules_rag_raises_when_no_docs(tmp_path, monkeypatch):
+    """Should raise FileNotFoundError when rules dir has no files."""
+    import core.config as cfg
+    monkeypatch.setattr(cfg, "RULES_DIR", str(tmp_path))
+    monkeypatch.setattr(cfg, "RAG_PERSIST_DIR", str(tmp_path / "index"))
+
     import core.rules_rag as rag
     importlib.reload(rag)
     rag._qa_chain = None
 
-    with patch.object(rag, "_load_rules_docs", return_value=[]):
-        with pytest.raises(FileNotFoundError, match="No rules files found"):
-            rag.init_rules_rag()
+    with pytest.raises(FileNotFoundError, match="No rules files found"):
+        rag.init_rules_rag()
 
 
-@patch("core.rules_rag.RunnablePassthrough")
-@patch("core.rules_rag.StrOutputParser")
-@patch("core.rules_rag.AzureChatOpenAI")        # Updated: was ChatOpenAI
-@patch("core.rules_rag.PromptTemplate")
-@patch("core.rules_rag.Chroma")
-@patch("core.rules_rag.AzureOpenAIEmbeddings")  # Updated: was OpenAIEmbeddings
-@patch("core.rules_rag.RecursiveCharacterTextSplitter")
-def test_init_rules_rag_builds_chain_correctly(
-    MockSplitter,
-    MockEmbeddings,
-    MockChroma,
-    MockPrompt,
-    MockLLM,
-    MockParser,
-    MockPassthrough,
-):
-    """Should create vectorstore and set _qa_chain when docs are present."""
-    import importlib
+# ---------------------------------------------------------------------------
+# 5 - init_rules_rag() builds real chain -- HITS AZURE API
+# ---------------------------------------------------------------------------
+
+def test_init_rules_rag_builds_real_chain(tmp_path, monkeypatch):
+    """
+    Real integration test: builds vectorstore with Azure OpenAI embeddings
+    and constructs the LCEL chain. Requires .env to be configured.
+    """
+    _write_temp_rules(tmp_path, SAMPLE_RULES)
+
+    import core.config as cfg
+    monkeypatch.setattr(cfg, "RULES_DIR", str(tmp_path))
+    monkeypatch.setattr(cfg, "RAG_PERSIST_DIR", str(tmp_path / "index"))
+
     import core.rules_rag as rag
     importlib.reload(rag)
-
     rag._qa_chain = None
     rag._vectorstore = None
 
-    fake_doc = MagicMock()
-    fake_doc.page_content = "Price must match PO."
-    MockSplitter.return_value.create_documents.return_value = [fake_doc]
-    MockChroma.from_documents.return_value.as_retriever.return_value = MagicMock()
+    # This makes real Azure OpenAI embedding API calls
+    rag.init_rules_rag()
 
-    with patch.object(rag, "_load_rules_docs", return_value=["Price must match PO."]):
-        rag.init_rules_rag()
-
-    MockChroma.from_documents.assert_called_once()
-    MockLLM.assert_called_once()
-    assert rag._qa_chain is not None
+    assert rag._qa_chain is not None, "Chain must be built after init_rules_rag()"
+    assert rag._vectorstore is not None, "Vectorstore must be populated"
 
 
 # ---------------------------------------------------------------------------
-# 6, 7 & 8 - ask_rules()
+# 6 & 7 - ask_rules() returns a real answer -- HITS AZURE API
 # ---------------------------------------------------------------------------
 
-def test_ask_rules_auto_inits_on_first_call():
-    """ask_rules() should call init_rules_rag() when _qa_chain is None."""
-    import importlib
+def test_ask_rules_returns_real_answer_for_price_question(tmp_path, monkeypatch):
+    """
+    Real integration test: asks a price-related question and checks
+    that Azure returns a non-empty string answer.
+    """
+    _write_temp_rules(tmp_path, SAMPLE_RULES)
+
+    import core.config as cfg
+    monkeypatch.setattr(cfg, "RULES_DIR", str(tmp_path))
+    monkeypatch.setattr(cfg, "RAG_PERSIST_DIR", str(tmp_path / "index"))
+
     import core.rules_rag as rag
     importlib.reload(rag)
     rag._qa_chain = None
+    rag._vectorstore = None
 
-    fake_chain = MagicMock()
-    fake_chain.invoke.return_value = "Prices must match within 5%."
+    answer = rag.ask_rules(
+        "What is the tolerance rule when invoice price differs from PO price?"
+    )
 
-    def side_effect():
-        rag._qa_chain = fake_chain
+    assert isinstance(answer, str), "Answer must be a string"
+    assert len(answer.strip()) > 10, "Answer must be non-trivial"
+    # The answer should mention tolerance or price or 5%
+    keywords = ["tolerance", "price", "5%", "PRICE_TOLERANCE", "finance"]
+    assert any(kw.lower() in answer.lower() for kw in keywords), (
+        f"Expected answer to be relevant to price tolerance, got: {answer}"
+    )
 
-    with patch.object(rag, "init_rules_rag", side_effect=side_effect) as mock_init:
-        result = rag.ask_rules("What is the price tolerance?")
-        mock_init.assert_called_once()
-    assert result == "Prices must match within 5%."
 
+def test_ask_rules_returns_real_answer_for_no_match_question(tmp_path, monkeypatch):
+    """
+    Real integration test: asks a NO_MATCH scenario question and
+    validates the response references blocking or critical exceptions.
+    """
+    _write_temp_rules(tmp_path, SAMPLE_RULES)
 
-def test_ask_rules_calls_invoke_with_exact_question():
-    """ask_rules() must call chain.invoke() with the exact question string."""
-    import importlib
+    import core.config as cfg
+    monkeypatch.setattr(cfg, "RULES_DIR", str(tmp_path))
+    monkeypatch.setattr(cfg, "RAG_PERSIST_DIR", str(tmp_path / "index"))
+
     import core.rules_rag as rag
     importlib.reload(rag)
+    rag._qa_chain = None
+    rag._vectorstore = None
 
-    fake_chain = MagicMock()
-    fake_chain.invoke.return_value = "Flag as CRITICAL exception."
-    rag._qa_chain = fake_chain
+    answer = rag.ask_rules(
+        "What should happen when a product code on the invoice is not found in any PO?"
+    )
 
-    question = "What happens when product code is not in any open PO?"
-    result = rag.ask_rules(question)
-    fake_chain.invoke.assert_called_once_with(question)
-    assert result == "Flag as CRITICAL exception."
-
-
-def test_ask_rules_returns_string():
-    """ask_rules() should always return a string."""
-    import importlib
-    import core.rules_rag as rag
-    importlib.reload(rag)
-
-    fake_chain = MagicMock()
-    fake_chain.invoke.return_value = "Apply 2% tolerance for Global Tech Corp."
-    rag._qa_chain = fake_chain
-
-    result = rag.ask_rules("Vendor policy for Global Tech Corp?")
-    assert isinstance(result, str)
+    assert isinstance(answer, str)
+    assert len(answer.strip()) > 10
+    keywords = ["block", "critical", "exception", "procurement", "NO_MATCH"]
+    assert any(kw.lower() in answer.lower() for kw in keywords), (
+        f"Expected answer to reference blocking/critical, got: {answer}"
+    )
 
 
 # ---------------------------------------------------------------------------
-# 9 - reload_rules()
+# 8 - ask_rules() cold start (auto-init) -- HITS AZURE API
 # ---------------------------------------------------------------------------
 
-def test_reload_rules_calls_init_with_force_reload_true():
-    """reload_rules() must call init_rules_rag(force_reload=True)."""
-    import importlib
+def test_ask_rules_cold_start_auto_inits(tmp_path, monkeypatch):
+    """
+    ask_rules() must auto-initialize the chain on first call
+    even when _qa_chain is None (cold start scenario).
+    """
+    _write_temp_rules(tmp_path, SAMPLE_RULES)
+
+    import core.config as cfg
+    monkeypatch.setattr(cfg, "RULES_DIR", str(tmp_path))
+    monkeypatch.setattr(cfg, "RAG_PERSIST_DIR", str(tmp_path / "index"))
+
     import core.rules_rag as rag
     importlib.reload(rag)
+    rag._qa_chain = None   # Force cold start
+    rag._vectorstore = None
 
-    with patch.object(rag, "init_rules_rag") as mock_init:
-        rag.reload_rules()
-        mock_init.assert_called_once_with(force_reload=True)
+    # ask_rules should auto-call init_rules_rag internally
+    answer = rag.ask_rules("What is the quantity tolerance rule?")
+
+    assert rag._qa_chain is not None, "Chain must be initialized after cold-start ask"
+    assert isinstance(answer, str)
+    assert len(answer.strip()) > 5
+
+
+# ---------------------------------------------------------------------------
+# 9 - reload_rules() rebuilds from scratch -- HITS AZURE API
+# ---------------------------------------------------------------------------
+
+def test_reload_rules_rebuilds_chain(tmp_path, monkeypatch):
+    """
+    reload_rules() must force a full rebuild of the vectorstore and chain,
+    even if the chain was already initialised.
+    """
+    _write_temp_rules(tmp_path, SAMPLE_RULES)
+
+    import core.config as cfg
+    monkeypatch.setattr(cfg, "RULES_DIR", str(tmp_path))
+    monkeypatch.setattr(cfg, "RAG_PERSIST_DIR", str(tmp_path / "index"))
+
+    import core.rules_rag as rag
+    importlib.reload(rag)
+    rag._qa_chain = None
+    rag._vectorstore = None
+
+    # First build
+    rag.init_rules_rag()
+    first_chain = rag._qa_chain
+    assert first_chain is not None
+
+    # Force reload - must create a NEW chain object
+    rag.reload_rules()
+    second_chain = rag._qa_chain
+
+    assert second_chain is not None
+    # After reload a new chain object is built
+    assert second_chain is not first_chain, (
+        "reload_rules() must create a new chain, not reuse the old one"
+    )
