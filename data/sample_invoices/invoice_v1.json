@@ -1,0 +1,34 @@
+{
+  "invoice_number": "INV-001",
+  "vendor_id": "VEND-001",
+  "vendor_name": "ABC Supplies",
+  "invoice_date": "2026-03-01",
+  "po_number": "PO-001",
+  "currency": "USD",
+  "line_items": [
+    {
+      "line_number": 1,
+      "product_code": "PROD-123",
+      "description": "Widget A",
+      "quantity": 98,
+      "unit_price": 10.60,
+      "tax_rate": 0.18
+    },
+    {
+      "line_number": 2,
+      "product_code": "PROD-456",
+      "description": "Gadget B",
+      "quantity": 50,
+      "unit_price": 24.80,
+      "tax_rate": 0.18
+    },
+    {
+      "line_number": 3,
+      "product_code": "PROD-789",
+      "description": "Component C",
+      "quantity": 200,
+      "unit_price": 5.75,
+      "tax_rate": 0.18
+    }
+  ]
+}
