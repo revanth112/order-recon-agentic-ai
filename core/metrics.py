@@ -1,5 +1,6 @@
 # core/metrics.py - Observability helpers for the reconciliation pipeline
 from . import repositories as repo
+from .db import get_connection
 
 
 def compute_and_log_run_metrics(invoice_ids: list[int]):
@@ -15,7 +16,7 @@ def compute_and_log_run_metrics(invoice_ids: list[int]):
     avg_confidence = sum(confidences) / len(confidences) if confidences else 0.0
 
     # get reconciliations for these invoices
-    with repo.get_connection() as conn:
+    with get_connection() as conn:
         rows = conn.execute(
             "SELECT * FROM reconciliations WHERE invoice_id IN ({}) ".format(
                 ",".join(["?" for _ in invoice_ids])

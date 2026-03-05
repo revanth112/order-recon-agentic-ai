@@ -19,8 +19,11 @@ OPENAI_MODEL = os.getenv("AZURE_CHAT_DEPLOYMENT", "gpt-4o")
 AZURE_EMBED_DEPLOYMENT = os.getenv("AZURE_EMBED_DEPLOYMENT", "text-embedding-ada-002")
 
 # Shared Azure OpenAI client instance - import this anywhere you need the LLM
+# Use a placeholder key when none is configured so that the module can be imported
+# safely in environments without Azure credentials (e.g. unit tests). Actual API
+# calls will still fail with an auth error if a real key is absent.
 azure_openai_client = OpenAI(
-    api_key=AZURE_OPENAI_API_KEY,
+    api_key=AZURE_OPENAI_API_KEY or "no-api-key-configured",
     base_url=AZURE_OPENAI_ENDPOINT,
 )
 

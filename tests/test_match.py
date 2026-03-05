@@ -59,18 +59,22 @@ def test_env(tmp_path, monkeypatch):
 def seed_test_data(db_path):
     """Seeds a real PO and invoice into the test DB."""
     conn = sqlite3.connect(db_path)
-    # Insert Vendor
-    conn.execute("INSERT INTO vendors (id, name) VALUES ('VEND-1', 'Test Vendor')")
-    # Insert Order
-    conn.execute("INSERT INTO orders (id, vendor_id, status) VALUES ('PO-1', 'VEND-1', 'OPEN')")
+    # Insert Order (no vendors table; vendor_id is just a text field on orders)
+    conn.execute(
+        "INSERT INTO orders (po_number, vendor_id, vendor_name, status) "
+        "VALUES ('PO-1', 'VEND-1', 'Test Vendor', 'OPEN')"
+    )
+    order_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     # Insert Order Lines (PROD-A: 100 qty @ $10)
     conn.execute(
         "INSERT INTO order_lines (order_id, product_code, description, ordered_qty, unit_price) "
-        "VALUES ('PO-1', 'PROD-A', 'Item A', 100, 10.00)"
+        "VALUES (?, 'PROD-A', 'Item A', 100, 10.00)",
+        (order_id,),
     )
     # Insert Invoice (structural record)
     conn.execute(
-        "INSERT INTO invoices (vendor_id, vendor_name, status) VALUES ('VEND-1', 'Test Vendor', 'MATCHING')"
+        "INSERT INTO invoices (vendor_id, vendor_name, raw_json, status) "
+        "VALUES ('VEND-1', 'Test Vendor', '{}', 'MATCHING')"
     )
     invoice_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     conn.commit()
@@ -104,7 +108,7 @@ def test_run_matcher_perfect_match(test_env):
 
     # Verify DB status
     conn = sqlite3.connect(test_env["db"])
-    status = conn.execute("SELECT status FROM reconciliations WHERE id = ?", (recon_id,)).fetchone()[0]
+    status = conn.execute("SELECT overall_status FROM reconciliations WHERE id = ?", (recon_id,)).fetchone()[0]
     conn.close()
     assert status == "MATCHED"
 
@@ -184,7 +188,7 @@ def test_run_matcher_within_tolerance(test_env):
 
     conn = sqlite3.connect(test_env["db"])
     line_status = conn.execute(
-        "SELECT status FROM reconciliation_lines WHERE reconciliation_id = ?", (recon_id,)
+        "SELECT match_status FROM reconciliation_lines WHERE reconciliation_id = ?", (recon_id,)
     ).fetchone()[0]
     conn.close()
 

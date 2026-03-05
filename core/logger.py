@@ -52,7 +52,7 @@ def _infer_agent(message: str) -> str:
 def _infer_level(message: str) -> str:
   """Derive severity level from keywords in the message."""
   upper = message.upper()
-  if 'ERROR' in upper or 'FAILED' in upper or 'EXCEPTION' in upper:
+  if 'ERROR' in upper or 'FAILED' in upper:
     return 'ERROR'
   if 'WARNING' in upper or 'WARN' in upper or 'LOW CONFIDENCE' in upper:
     return 'WARNING'

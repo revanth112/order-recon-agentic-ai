@@ -60,21 +60,23 @@ def test_insert_exception(tmp_db):
   """Inserting an exception record should succeed."""
   import core.repositories as repo
   import importlib
+  from datetime import datetime, timezone
   importlib.reload(repo)
   inv_id = repo.insert_invoice('{}', 'hash_ex', 'V1', 'Vendor')
-  repo.insert_exception(
-    invoice_id=inv_id,
-    po_number='PO-001',
-    exception_type='PRICE_MISMATCH',
-    field_name='unit_price',
-    invoice_value=100.0,
-    po_value=95.0,
-    severity='HIGH',
-    notes='Price differs by 5'
+  # Exceptions require a reconciliation FK, so create one first
+  recon_id = repo.create_reconciliation(
+      inv_id, 'PO-001', datetime.now(timezone.utc).isoformat()
   )
-  exceptions = repo.get_exceptions_for_invoice(inv_id)
+  repo.insert_exception(
+      recon_id=recon_id,
+      exc_type='PRICE_MISMATCH',
+      severity='WARNING',
+      description='Price differs by 5%',
+      auto_action='NEEDS_REVIEW',
+  )
+  exceptions = repo.get_unresolved_exceptions()
   assert len(exceptions) >= 1
-  assert exceptions[0]['exception_type'] == 'PRICE_MISMATCH'
+  assert exceptions[0]['type'] == 'PRICE_MISMATCH'
 def test_update_invoice_status(tmp_db):
     """Updating invoice status should persist correctly."""
     import core.repositories as repo
