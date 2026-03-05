@@ -53,6 +53,8 @@ def init_rules_rag(force_reload: bool = False):
         azure_endpoint=AZURE_OPENAI_ENDPOINT,
         api_key=AZURE_OPENAI_API_KEY,
         api_version=AZURE_OPENAI_API_VERSION,
+        disallowed_special=(),      # ← prevents tiktoken errors on special tokens
+        tiktoken_enabled=False,     # ← send raw strings, not token IDs (fixes BadRequestError)
     )
 
     _vectorstore = Chroma.from_documents(
