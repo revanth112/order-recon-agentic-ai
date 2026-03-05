@@ -35,14 +35,11 @@ def test_env(tmp_path, monkeypatch):
     rules_dir = tmp_path / "rules"
     rules_dir.mkdir()
     (rules_dir / "match_rules.md").write_text(
-        "# Matching Rules
-"
-        "- If price differs by > 5%, it is a PRICE_MISMATCH.
-"
-        "- If qty differs by > 5%, it is a QUANTITY_MISMATCH.
-"
-        "- If product code is not in PO, it is NO_MATCH and is CRITICAL.
-",
+        """# Matching Rules
+- If price differs by > 5%, it is a PRICE_MISMATCH.
+- If qty differs by > 5%, it is a QUANTITY_MISMATCH.
+- If product code is not in PO, it is NO_MATCH and is CRITICAL.
+""",
         encoding="utf-8"
     )
     monkeypatch.setattr(cfg, "RULES_DIR", str(rules_dir))
