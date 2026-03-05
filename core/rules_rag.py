@@ -3,8 +3,9 @@ from pathlib import Path
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain.chains import RetrievalQA
 from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.runnables import RunnablePassthrough
 from .config import RULES_DIR, RAG_PERSIST_DIR, OPENAI_MODEL
 
 _vectorstore = None
@@ -42,7 +43,6 @@ def init_rules_rag(force_reload: bool = False):
         embedding=embeddings,
         persist_directory=RAG_PERSIST_DIR,
     )
-
     retriever = _vectorstore.as_retriever(search_kwargs={"k": 3})
 
     prompt_template = PromptTemplate(
@@ -57,12 +57,16 @@ def init_rules_rag(force_reload: bool = False):
     )
 
     llm = ChatOpenAI(model=OPENAI_MODEL, temperature=0)
-    _qa_chain = RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",
-        retriever=retriever,
-        chain_type_kwargs={"prompt": prompt_template},
-        return_source_documents=False,
+
+    # Modern LCEL chain - replaces deprecated RetrievalQA
+    def format_docs(docs):
+        return "\n\n".join(doc.page_content for doc in docs)
+
+    _qa_chain = (
+        {"context": retriever | format_docs, "question": RunnablePassthrough()}
+        | prompt_template
+        | llm
+        | StrOutputParser()
     )
 
 
@@ -70,7 +74,7 @@ def ask_rules(question: str) -> str:
     """Query the RAG chain with a reconciliation question. Auto-initializes on first call."""
     if _qa_chain is None:
         init_rules_rag()
-    return _qa_chain.run(question)
+    return _qa_chain.invoke(question)
 
 
 def reload_rules():
