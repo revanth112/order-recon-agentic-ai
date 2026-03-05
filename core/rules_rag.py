@@ -1,10 +1,10 @@
 # core/rules_rag.py - RAG over business rules and reconciliation guidelines
 from pathlib import Path
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain.chains import RetrievalQA
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 from .config import RULES_DIR, RAG_PERSIST_DIR, OPENAI_MODEL
 
 _vectorstore = None
