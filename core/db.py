@@ -127,6 +127,23 @@ def init_db():
         avg_extraction_confidence REAL,
         avg_reconciliation_latency_ms REAL
     );
+    
+    CREATE TABLE IF NOT EXISTS pipeline_logs (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        invoice_id INTEGER NOT NULL,
+        run_id     TEXT    NOT NULL,
+        agent      TEXT    NOT NULL DEFAULT 'SYSTEM',
+        level      TEXT    NOT NULL DEFAULT 'INFO',
+        message    TEXT    NOT NULL,
+        created_at TEXT    DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_pipeline_logs_invoice
+        ON pipeline_logs (invoice_id);
+
+    CREATE INDEX IF NOT EXISTS idx_pipeline_logs_run
+        ON pipeline_logs (run_id);
     """
     with get_connection() as conn:
         conn.executescript(schema)
