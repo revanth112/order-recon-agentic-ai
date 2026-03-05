@@ -76,37 +76,68 @@ if page == "Upload & Run Pipeline":
                 "pipeline_status": "UPLOADED",
             }
 
-            # ---- Pipeline Stepper UI ----
+            # ---- Live Pipeline Stepper UI ----
             steps = ["UPLOADED", "EXTRACTING", "MATCHING", "EXCEPTION_HANDLING", "COMPLETED"]
             step_labels = {
-                "UPLOADED": "Upload",
-                "EXTRACTING": "Extractor Agent",
-                "MATCHING": "Matcher Agent",
-                "EXCEPTION_HANDLING": "Exception Handler",
-                "COMPLETED": "Completed",
+                "UPLOADED":           "📁 Upload",
+                "EXTRACTING":         "🔍 Extractor Agent",
+                "MATCHING":           "🔗 Matcher Agent",
+                "EXCEPTION_HANDLING": "⚠️ Exception Handler",
+                "COMPLETED":          "✅ Completed",
             }
 
-            progress_placeholder = st.empty()
-            log_placeholder = st.empty()
-            status_placeholder = st.empty()
+            stepper_placeholder = st.empty()
+            log_placeholder     = st.empty()
+            current_status      = "UPLOADED"
+            live_logs           = []
 
-            with st.spinner("Running reconciliation pipeline..."):
-                final_state = recon_graph.invoke(initial_state)
+            def render_stepper(status):
+                if status not in steps:
+                    status = steps[-1]
+                cols = stepper_placeholder.columns(len(steps))
+                for i, step in enumerate(steps):
+                    done   = steps.index(step) <= steps.index(status)
+                    active = step == status
+                    color  = "#00cc66" if done else ("#f0a500" if active else "#555555")
+                    icon   = "✅" if done else ("⏳" if active else "○")
+                    cols[i].markdown(
+                        f"<div style='text-align:center;color:{color};font-weight:bold;font-size:14px;padding:8px'>"
+                        f"{icon}<br>{step_labels[step]}</div>",
+                        unsafe_allow_html=True,
+                    )
 
-            st.session_state["pipeline_logs"] = final_state.get("logs", [])
-            current_status = final_state.get("pipeline_status", "COMPLETED")
+            render_stepper("UPLOADED")
 
-            # show stepper
-            cols = st.columns(len(steps))
-            for i, step in enumerate(steps):
-                done = steps.index(step) <= steps.index(current_status)
-                icon = "green" if done else "gray"
-                cols[i].markdown(
-                    f"<div style='text-align:center; color:{icon}; font-weight:bold;'>{'checkmark' if done else 'o'} {step_labels[step]}</div>",
-                    unsafe_allow_html=True,
-                )
+            # Stream the graph — UI updates live after each node completes
+            final_state = None
+            for chunk in recon_graph.stream(initial_state):
+                for _, node_output in chunk.items():
+                    # Update status from node output
+                    new_status = node_output.get("pipeline_status", current_status)
+                    if new_status in steps:
+                        current_status = new_status
 
-            st.success(f"Pipeline completed! Status: {current_status}")
+                    # Append new logs
+                    new_logs = node_output.get("logs", [])
+                    live_logs.extend(new_logs)
+
+                    # Re-render stepper live
+                    render_stepper(current_status)
+
+                    # Re-render logs live
+                    with log_placeholder.container():
+                        st.markdown("**⚡ Live Pipeline Logs:**")
+                        for log_line in live_logs:
+                            st.write(f"- {log_line}")
+
+                    final_state = node_output
+
+            if final_state is None:
+                final_state = initial_state
+
+            st.session_state["pipeline_logs"] = live_logs
+            render_stepper("COMPLETED")
+            st.success(f"✅ Pipeline completed! Status: {final_state.get('pipeline_status', 'COMPLETED')}")
 
     # Show pipeline logs and results
     if "current_invoice_id" in st.session_state:
