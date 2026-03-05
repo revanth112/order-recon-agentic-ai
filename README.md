@@ -221,3 +221,21 @@ MIT License - see [LICENSE](LICENSE) for details.
 ---
 
 *Built as a capstone project demonstrating multi-agent AI systems for financial operations automation.*
+
+
+### 📊 Data Generation & Seeding
+To train the RAG system and test the agents with a large volume of realistic data, run:
+```bash
+python scripts/generate_data.py
+```
+This will:
+1. Create 1000 orders in the `data/order_recon.db`.
+2. Generate 1000 corresponding invoice JSON files in `data/invoices/`.
+3. Randomly introduce common discrepancies (price, quantity, SKU) for testing.
+
+### 🚀 Getting Started
+1. Clone the repository.
+2. Install dependencies: `pip install -r requirements.txt`.
+3. Set up your `.env` with `OPENAI_API_KEY`.
+4. Run the data generator: `python scripts/generate_data.py`.
+5. Start the UI: `streamlit run streamlit_app/main.py`.
