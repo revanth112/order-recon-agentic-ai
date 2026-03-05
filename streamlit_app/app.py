@@ -30,18 +30,91 @@ st.set_page_config(
 init_db()
 
 # --- Sidebar navigation ---
-PAGES = [
-    "Upload & Run Pipeline",
-    "Database Explorer",
-    "Order Tracker",
-    "Exceptions Dashboard",
-    "RAG Management",
-    "Observability Metrics",
+# ── Sidebar styling ──────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+[data-testid="stSidebar"] {
+    background-color: #0d1117;
+    padding-top: 0px;
+}
+[data-testid="stSidebar"] > div:first-child {
+    padding-top: 1rem;
+}
+div[data-testid="stSidebar"] button {
+    width: 100%;
+    text-align: left !important;
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    color: #8b949e;
+    padding: 10px 14px;
+    font-size: 14px;
+    margin-bottom: 2px;
+    cursor: pointer;
+}
+div[data-testid="stSidebar"] button:hover {
+    background-color: #161b22;
+    color: #e6edf3;
+}
+div[data-testid="stSidebar"] button p {
+    text-align: left !important;
+    font-size: 14px;
+}
+.nav-active button {
+    background-color: #1f3a5f !important;
+    color: #58a6ff !important;
+    border-left: 3px solid #58a6ff !important;
+}
+.nav-active button p {
+    color: #58a6ff !important;
+    font-weight: 600 !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ── Sidebar header ────────────────────────────────────────────────────────────
+st.sidebar.markdown("""
+<div style='padding: 16px 8px 8px 8px;'>
+    <div style='font-size: 22px; font-weight: 700; color: #e6edf3;'>📊 Order Recon AI</div>
+    <div style='font-size: 11px; color: #8b949e; margin-top: 4px;'>Multi-Agent Invoice Reconciliation</div>
+</div>
+<hr style='border: none; border-top: 1px solid #21262d; margin: 8px 0 12px 0;'>
+""", unsafe_allow_html=True)
+
+# ── Nav items ─────────────────────────────────────────────────────────────────
+NAV_ITEMS = [
+    ("🚀", "Upload & Run Pipeline"),
+    ("🗄️", "Database Explorer"),
+    ("📦", "Order Tracker"),
+    ("⚠️", "Exceptions Dashboard"),
+    ("🧠", "RAG Management"),
+    ("📈", "Observability Metrics"),
 ]
 
-st.sidebar.title("📊 Order Recon AI")
-st.sidebar.markdown("---")
-page = st.sidebar.radio("Navigate", PAGES)
+if "active_page" not in st.session_state:
+    st.session_state["active_page"] = "Upload & Run Pipeline"
+
+page = st.session_state["active_page"]
+
+for icon, label in NAV_ITEMS:
+    is_active = page == label
+    if is_active:
+        st.sidebar.markdown("<div class='nav-active'>", unsafe_allow_html=True)
+    clicked = st.sidebar.button(f"{icon}  {label}", key=f"nav_{label}", use_container_width=True)
+    if is_active:
+        st.sidebar.markdown("</div>", unsafe_allow_html=True)
+    if clicked:
+        st.session_state["active_page"] = label
+        st.rerun()
+
+# ── Sidebar footer ────────────────────────────────────────────────────────────
+st.sidebar.markdown("""
+<hr style='border: none; border-top: 1px solid #21262d; margin: 16px 0 8px 0;'>
+<div style='padding: 0 8px; color: #484f58; font-size: 11px;'>
+    <div>v1.0.0 · Order Recon AI</div>
+    <div style='margin-top: 2px;'>© 2026 · All rights reserved</div>
+</div>
+""", unsafe_allow_html=True)
 
 
 # ============================================================
@@ -67,7 +140,6 @@ if page == "Upload & Run Pipeline":
         if st.button("Run Reconciliation Pipeline", type="primary"):
             invoice_id = start_invoice_pipeline(raw, vendor_id, vendor_name, template_hash)
             st.session_state["current_invoice_id"] = invoice_id
-            st.session_state["pipeline_logs"] = []
 
             initial_state = {
                 "invoice_id": invoice_id,
@@ -135,7 +207,6 @@ if page == "Upload & Run Pipeline":
             if final_state is None:
                 final_state = initial_state
 
-            st.session_state["pipeline_logs"] = live_logs
             render_stepper("COMPLETED")
             st.success(f"✅ Pipeline completed! Status: {final_state.get('pipeline_status', 'COMPLETED')}")
 
@@ -150,11 +221,6 @@ if page == "Upload & Run Pipeline":
             col1.metric("Vendor", invoice.get("vendor_name", "N/A"))
             col2.metric("Confidence", f"{(invoice.get('extraction_confidence') or 0):.0%}")
             col3.metric("Status", invoice.get("status", "N/A"))
-
-        if st.session_state.get("pipeline_logs"):
-            st.subheader("Pipeline Logs")
-            for log_line in st.session_state["pipeline_logs"]:
-                st.write(f"- {log_line}")
 
         # Show extracted lines
         lines = repo.get_invoice_lines(invoice_id)
