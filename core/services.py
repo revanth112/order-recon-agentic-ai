@@ -16,8 +16,16 @@ from .config import (
     QTY_TOLERANCE_PCT,
 )
 from . import repositories as repo
-from .rules_rag import ask_rules
 from models.schemas import ExtractedInvoice, InvoiceLine
+
+
+def _safe_ask_rules(question: str) -> str:
+    """Call RAG safely — return a default rule string if RAG is unavailable."""
+    try:
+        from .rules_rag import ask_rules
+        return ask_rules(question)
+    except Exception:
+        return "No matching rule found. Flag for manual review."
 
 
 def compute_template_hash(invoice_json: dict) -> str:
@@ -94,7 +102,7 @@ def run_matcher(invoice_id: int, extracted_data: dict) -> Tuple[int, list]:
         ol    = order_map.get(pcode)
 
         if not ol:
-            rule = ask_rules(
+            rule = _safe_ask_rules(
                 f"What should happen when product code '{pcode}' "
                 "is not found in any open PO?"
             )
@@ -113,7 +121,7 @@ def run_matcher(invoice_id: int, extracted_data: dict) -> Tuple[int, list]:
             status = "MATCHED" if qty_diff == 0 and price_diff == 0 else "WITHIN_TOLERANCE"
             rule   = "Within tolerance limits"
         else:
-            rule = ask_rules(
+            rule = _safe_ask_rules(
                 f"Product '{pcode}': invoice qty={il['quantity']} vs order qty={ol['ordered_qty']}, "
                 f"invoice price={il['unit_price']} vs order price={ol['unit_price']}. What rule applies?"
             )
