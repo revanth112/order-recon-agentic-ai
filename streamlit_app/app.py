@@ -9,13 +9,15 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timezone
 
-from core.db import init_db
+from core.db import init_db, get_connection
 from core import repositories as repo
 from core import logger as pipeline_logger
 from core.services import compute_template_hash, start_invoice_pipeline
 from core.metrics import get_dashboard_metrics
-from core.config import RULES_DIR
+from core.config import RULES_DIR, RAG_PERSIST_DIR
+from core.rules_rag import ask_rules, reload_rules
 from agents.graph import recon_graph
+from streamlit_app.log_viewer import render_log_viewer
 
 # --- Page config ---
 st.set_page_config(
@@ -162,14 +164,16 @@ elif page == "Database Explorer":
         "metrics_runs": repo.get_metrics_history,
     }
 
-    from core.db import get_connection
-
     def _fetch_table(table_name: str) -> list:
+        if table_name not in TABLE_OPTIONS:
+            return []
         fetcher = TABLE_FETCHERS.get(table_name)
         if fetcher:
             return fetcher()
         with get_connection() as conn:
-            rows = conn.execute(f"SELECT * FROM {table_name} ORDER BY id DESC LIMIT 500").fetchall()
+            rows = conn.execute(
+                f"SELECT * FROM [{table_name}] ORDER BY id DESC LIMIT 500"
+            ).fetchall()
             return [dict(r) for r in rows]
 
     rows = _fetch_table(selected_table)
@@ -335,7 +339,6 @@ elif page == "Order Tracker":
 
     # ---- Tab 3: Pipeline Logs ----
     with tracker_tab3:
-        from streamlit_app.log_viewer import render_log_viewer
         render_log_viewer()
 
 
@@ -464,7 +467,6 @@ elif page == "RAG Management":
             if custom_question.strip():
                 with st.spinner("Querying RAG system..."):
                     try:
-                        from core.rules_rag import ask_rules
                         answer = ask_rules(custom_question.strip())
                         st.success("RAG Response:")
                         st.markdown(answer)
@@ -483,7 +485,6 @@ elif page == "RAG Management":
             if custom_question.strip():
                 with st.spinner("Querying RAG system..."):
                     try:
-                        from core.rules_rag import ask_rules
                         answer = ask_rules(custom_question.strip())
                         st.session_state["rag_history"].append({
                             "question": custom_question.strip(),
@@ -518,7 +519,6 @@ elif page == "RAG Management":
             if st.button("🔄 Reload RAG Index", type="primary"):
                 with st.spinner("Reloading RAG index..."):
                     try:
-                        from core.rules_rag import reload_rules
                         reload_rules()
                         st.success("RAG index reloaded successfully!")
                     except FileNotFoundError as e:
@@ -528,7 +528,6 @@ elif page == "RAG Management":
 
         with col2:
             st.markdown("**Index Status**")
-            from core.config import RAG_PERSIST_DIR
             index_path = Path(RAG_PERSIST_DIR)
             if index_path.exists():
                 index_files = list(index_path.rglob("*"))
