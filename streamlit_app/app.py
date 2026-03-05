@@ -158,23 +158,38 @@ if page == "Upload & Run Pipeline":
                 "COMPLETED":          "✅ Completed",
             }
 
+            # Severity classification for discrepancy types
+            _CRITICAL_TYPES = {"NO_MATCH", "INVALID_PO", "DUPLICATE_BILLING", "CURRENCY_MISMATCH"}
+            _WARNING_TYPES  = {"QUANTITY_MISMATCH", "PRICE_MISMATCH"}
+
             stepper_placeholder = st.empty()
             log_placeholder     = st.empty()
             current_status      = "UPLOADED"
             live_logs           = []
 
-            def render_stepper(status):
+            def render_stepper(status, outcome="OK"):
+                """Render pipeline stepper. outcome: 'OK', 'NEEDS_REVIEW', or 'BLOCKED'."""
                 if status not in steps:
                     status = steps[-1]
+                # Outcome-based styling for the final COMPLETED step
+                _outcome_cfg = {
+                    "OK":           ("#00cc66", "✅", "✅ Completed"),
+                    "NEEDS_REVIEW": ("#ff9900", "⚠️", "⚠️ Needs Review"),
+                    "BLOCKED":      ("#ff4444", "🚫", "🚫 Blocked"),
+                }
                 cols = stepper_placeholder.columns(len(steps))
                 for i, step in enumerate(steps):
                     done   = steps.index(step) <= steps.index(status)
                     active = step == status
-                    color  = "#00cc66" if done else ("#f0a500" if active else "#555555")
-                    icon   = "✅" if done else ("⏳" if active else "○")
+                    if step == "COMPLETED" and done:
+                        color, icon, label = _outcome_cfg[outcome]
+                    else:
+                        color = "#00cc66" if done else ("#f0a500" if active else "#555555")
+                        icon  = "✅" if done else ("⏳" if active else "○")
+                        label = step_labels[step]
                     cols[i].markdown(
                         f"<div style='text-align:center;color:{color};font-weight:bold;font-size:14px;padding:8px'>"
-                        f"{icon}<br>{step_labels[step]}</div>",
+                        f"{icon}<br>{label}</div>",
                         unsafe_allow_html=True,
                     )
 
@@ -207,8 +222,39 @@ if page == "Upload & Run Pipeline":
             if final_state is None:
                 final_state = initial_state
 
-            render_stepper("COMPLETED")
-            st.success(f"✅ Pipeline completed! Status: {final_state.get('pipeline_status', 'COMPLETED')}")
+            # Determine outcome from discrepancies
+            discrepancies = final_state.get("discrepancies", [])
+            disc_types    = {d.get("type", "UNKNOWN") for d in discrepancies}
+            if disc_types & _CRITICAL_TYPES:
+                outcome = "BLOCKED"
+            elif disc_types & _WARNING_TYPES:
+                outcome = "NEEDS_REVIEW"
+            elif discrepancies and disc_types - {"TOLERANCE_VARIANCE"}:
+                # Any discrepancy type other than auto-approved tolerance variance → review
+                outcome = "NEEDS_REVIEW"
+            else:
+                outcome = "OK"
+
+            render_stepper("COMPLETED", outcome=outcome)
+
+            if outcome == "BLOCKED":
+                blocked_types = sorted(disc_types & _CRITICAL_TYPES)
+                st.error(
+                    f"🚫 Pipeline blocked — critical discrepancies detected: "
+                    f"{', '.join(blocked_types)}. "
+                    "Invoice cannot be approved automatically. Please review in the Exceptions Dashboard."
+                )
+            elif outcome == "NEEDS_REVIEW":
+                review_types = sorted(
+                    disc_types - _CRITICAL_TYPES - {"TOLERANCE_VARIANCE"}
+                )
+                st.warning(
+                    f"⚠️ Pipeline completed with discrepancies"
+                    f"{': ' + ', '.join(review_types) if review_types else ''}. "
+                    "Human review is required before approval."
+                )
+            else:
+                st.success("✅ Pipeline completed! Invoice fully matched — no discrepancies found.")
 
     # Show pipeline logs and results
     if "current_invoice_id" in st.session_state:
