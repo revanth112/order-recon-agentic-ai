@@ -1,6 +1,6 @@
 # core/config.py - Load environment variables and global settings
 import os
-from openai import OpenAI
+from openai import AzureOpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -11,9 +11,9 @@ load_dotenv()
 AZURE_OPENAI_API_KEY  = os.getenv("AZURE_OPENAI_API_KEY")
 AZURE_OPENAI_ENDPOINT = os.getenv(
     "AZURE_OPENAI_ENDPOINT",
-    "https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1/"
+    "https://YOUR-RESOURCE.cognitiveservices.azure.com/"
 )
-AZURE_OPENAI_API_VERSION  = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01")
+AZURE_OPENAI_API_VERSION  = os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
 # Deployment / model name as set in Azure AI Foundry
 OPENAI_MODEL = os.getenv("AZURE_CHAT_DEPLOYMENT", "gpt-4o")
 AZURE_EMBED_DEPLOYMENT = os.getenv("AZURE_EMBED_DEPLOYMENT", "text-embedding-ada-002")
@@ -22,9 +22,10 @@ AZURE_EMBED_DEPLOYMENT = os.getenv("AZURE_EMBED_DEPLOYMENT", "text-embedding-ada
 # Use a placeholder key when none is configured so that the module can be imported
 # safely in environments without Azure credentials (e.g. unit tests). Actual API
 # calls will still fail with an auth error if a real key is absent.
-azure_openai_client = OpenAI(
+azure_openai_client = AzureOpenAI(
     api_key=AZURE_OPENAI_API_KEY or "no-api-key-configured",
-    base_url=AZURE_OPENAI_ENDPOINT,
+    azure_endpoint=AZURE_OPENAI_ENDPOINT,
+    api_version=AZURE_OPENAI_API_VERSION, 
 )
 
 # ------------------------------------------------------------------
