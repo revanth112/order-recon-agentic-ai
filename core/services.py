@@ -6,8 +6,8 @@ from datetime import datetime, timezone
 from typing import Tuple
 
 from langchain_openai import ChatOpenAI
-from langchain.output_parsers import PydanticOutputParser
-from langchain.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import PydanticOutputParser
+from langchain_core.prompts import ChatPromptTemplate
 
 from .config import CONFIDENCE_THRESHOLD, PRICE_TOLERANCE_PCT, QTY_TOLERANCE_PCT
 from . import repositories as repo
