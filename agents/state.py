@@ -6,7 +6,7 @@ class ReconState(TypedDict, total=False):
   invoice_id: int
   invoice_json: Dict[str, Any]
   extracted_data: Dict[str, Any]
-  reconciliation_id: int
+  recon_id: int
   discrepancies: List[Dict[str, Any]]
   pipeline_status: str
   logs: List[str]
