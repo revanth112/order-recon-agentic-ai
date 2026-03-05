@@ -1,6 +1,6 @@
 # Order Reconciliation Agentic AI
 
-> **Multi-Agent Order Reconciliation System** using LangGraph, GPT-4o, ChromaDB (RAG), SQLite and Streamlit
+> **Multi-Agent Order Reconciliation System** using LangGraph, Azure OpenAI (AI Foundry), ChromaDB (RAG), SQLite and Streamlit
 
 ---
 
@@ -12,7 +12,7 @@ Finance and operations teams reconcile invoices, Purchase Orders (POs), and deli
 
 A **multi-agent AI system** that:
 - Accepts invoice JSON as input
-- Extracts structured fields using GPT-4o
+- Extracts structured fields using Azure OpenAI GPT-4o
 - Matches invoices to POs using configurable tolerance rules
 - Identifies discrepancies (price, quantity, product codes)
 - Auto-updates a simulated SQLite order database
@@ -25,24 +25,33 @@ A **multi-agent AI system** that:
 
 ```
 Invoice JSON Input
-       |
-       v
- [Extractor Agent]  <-- GPT-4o structured extraction + Pydantic validation
-       |
-       v
- [Matcher Agent]    <-- RAG on business rules (ChromaDB) + tolerance logic
-       |
-       v
- [Exception Handler Agent]  <-- Severity classification + DB update
-       |
-       v
- [SQLite Database]  <-- invoices, purchase_orders, exceptions tables
-       |
-       v
- [Streamlit UI]     <-- Exception reports, metrics dashboard, pipeline runner
+        |
+        v
+[Extractor Agent]  <-- Azure OpenAI GPT-4o structured extraction + Pydantic validation
+        |
+        v
+[Matcher Agent]    <-- Rule-based matching + RAG on business rules (ChromaDB)
+        |
+        v
+[Exception Handler] <-- Auto-approve / block / flag for human review
+        |
+        v
+[SQLite DB]  +  [Streamlit UI Dashboard]
 ```
 
-**Orchestration**: LangGraph `StateGraph` with typed state passing between agents.
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| LLM | Azure OpenAI GPT-4o (via Azure AI Foundry) |
+| Embeddings | Azure OpenAI text-embedding-ada-002 |
+| Agent Framework | LangGraph |
+| RAG | LangChain + ChromaDB |
+| Database | SQLite |
+| UI | Streamlit |
+| Validation | Pydantic v2 |
 
 ---
 
@@ -50,192 +59,130 @@ Invoice JSON Input
 
 ```
 order-recon-agentic-ai/
-├── agents/
-│   ├── __init__.py
-│   ├── extractor.py        # Extractor Agent - GPT-4o field extraction
-│   ├── matcher.py          # Matcher Agent - RAG + tolerance matching
-│   ├── exception_handler.py # Exception Handler Agent - severity + DB write
-│   └── graph.py            # LangGraph StateGraph orchestration
-├── core/
-│   ├── __init__.py
-│   ├── config.py           # Environment config (OpenAI key, DB path)
-│   ├── db.py               # SQLite schema init
-│   ├── repositories.py     # CRUD operations for invoices/exceptions
-│   ├── services.py         # Pipeline runner, hash utilities
-│   └── metrics.py          # Observability: mismatch rates, dashboard stats
-├── data/
-│   ├── invoice_v1.json     # Sample invoice - clean match
-│   └── invoice_v2.json     # Sample invoice - mismatch test case
-├── models/
-│   └── schemas.py          # Pydantic models: InvoiceData, LineItem, etc.
-├── rules/
-│   └── vendor_policies.md  # Business rules / reconciliation guidelines
-├── streamlit_app/
-│   ├── __init__.py
-│   └── app.py              # Full Streamlit UI with tabs and metrics
-├── tests/
-│   ├── __init__.py
-│   ├── test_db.py          # Integration tests - SQLite repository layer
-│   ├── test_extract.py     # Unit tests - extractor agent logic
-│   └── test_match.py       # Unit tests - matcher tolerance logic
-├── .gitignore
-├── requirements.txt
-└── README.md
+├── agents/           # LangGraph nodes (extractor, matcher, exception handler)
+├── core/             # Business logic, config, db, repositories, RAG, logger
+├── data/             # SQLite DB + ChromaDB vector index
+├── models/           # Pydantic schemas
+├── rules/            # Business rules markdown files (RAG source)
+├── scripts/          # Data generation scripts
+├── streamlit_app/    # UI pages (dashboard, log viewer)
+├── tests/            # Pytest test suite
+├── .env              # Environment variables (not committed)
+└── requirements.txt
+```
+
+---
+
+## Setup
+
+### 1. Clone & Install
+
+```bash
+git clone https://github.com/revanth112/order-recon-agentic-ai.git
+cd order-recon-agentic-ai
+python -m venv venv
+source venv/bin/activate   # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+### 2. Configure Environment Variables
+
+Create a `.env` file in the project root:
+
+```env
+# -------------------------------------------------------
+# Azure AI Foundry - OpenAI SDK v1.x with Azure base_url
+# -------------------------------------------------------
+AZURE_OPENAI_API_KEY=your-azure-openai-api-key-here
+AZURE_OPENAI_ENDPOINT=https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1/
+
+# Deployment names (as set in Azure AI Foundry)
+AZURE_CHAT_DEPLOYMENT=gpt-4o
+AZURE_EMBED_DEPLOYMENT=text-embedding-ada-002
+
+# Database
+SQLITE_DB_PATH=./data/order_recon.db
+
+# Reconciliation thresholds
+CONFIDENCE_THRESHOLD=0.8
+PRICE_TOLERANCE_PCT=0.05
+QTY_TOLERANCE_PCT=0.05
+
+# RAG paths
+RULES_DIR=./rules
+RAG_PERSIST_DIR=./data/rules_index
+
+# App settings
+ENV=dev
+LOG_LEVEL=INFO
+```
+
+> **Where to find your Azure credentials:**
+> 1. Go to [Azure AI Foundry](https://ai.azure.com) → your project
+> 2. **Deployments** tab → note your deployment name (e.g., `gpt-4o`)
+> 3. **Overview** → copy the **Endpoint** and **API Key**
+
+### 3. Initialize the Database & Generate Data
+
+```bash
+python scripts/generate_data.py
+```
+
+### 4. Run the Streamlit UI
+
+```bash
+streamlit run streamlit_app/app.py
+```
+
+Open [http://localhost:8501](http://localhost:8501)
+
+---
+
+## Running Tests
+
+```bash
+# All tests
+pytest tests/ -v
+
+# Individual test modules
+pytest tests/test_db.py -v
+pytest tests/test_extract.py -v
+pytest tests/test_match.py -v
+pytest tests/test_logging.py -v
+pytest tests/test_rag.py -v
 ```
 
 ---
 
 ## Core Features
 
-| Feature | Details |
-|---|---|
-| **Structured Extraction** | GPT-4o extracts vendor, PO number, line items from raw invoice JSON |
-| **RAG on Business Rules** | ChromaDB vector store over `vendor_policies.md` guides matching decisions |
-| **Multi-Agent Pipeline** | Extractor → Matcher → Exception Handler via LangGraph |
-| **Match Rules** | Quantity tolerance (±2%), price tolerance (±5%), product code exact match |
-| **Auto DB Update** | SQLite updated automatically with invoice status and exceptions |
-| **Exception Report UI** | Streamlit dashboard with filterable exception table and metrics |
-| **Observability** | Mismatch rate, exception severity breakdown, pipeline run history |
+### Extractor Agent
+- Sends invoice JSON to Azure OpenAI GPT-4o
+- Parses structured output with Pydantic (`ExtractedInvoice`)
+- Scores extraction confidence; flags low-confidence runs
 
----
+### Matcher Agent
+- Matches invoice lines to order lines by `product_code`
+- Applies configurable `PRICE_TOLERANCE_PCT` and `QTY_TOLERANCE_PCT`
+- Queries ChromaDB RAG for applicable business rules on mismatches
 
-## Setup & Installation
+### Exception Handler
+- Classifies exceptions as `CRITICAL` (NO_MATCH) or `WARNING`
+- Auto-actions: `BLOCKED` or `NEEDS_REVIEW`
+- Stores all exceptions in SQLite for audit trail
 
-### Prerequisites
-- Python 3.10+
-- OpenAI API key
+### RAG on Business Rules
+- Markdown rule files in `rules/` directory
+- Indexed with Azure OpenAI embeddings into ChromaDB
+- Retrieved at match-time to provide context-aware rule citations
 
-### Install
-
-```bash
-git clone https://github.com/revanth112/order-recon-agentic-ai.git
-cd order-recon-agentic-ai
-pip install -r requirements.txt
-```
-
-### Configure
-
-Create a `.env` file in the root:
-
-```env
-OPENAI_API_KEY=sk-your-key-here
-SQLITE_DB_PATH=./recon.db
-```
-
-### Run the Streamlit App
-
-```bash
-streamlit run streamlit_app/app.py
-```
-
-### Run Tests
-
-```bash
-pytest tests/ -v --cov=. --cov-report=term-missing
-```
-
----
-
-## Agent Details
-
-### 1. Extractor Agent (`agents/extractor.py`)
-- Uses GPT-4o with function calling
-- Extracts: vendor ID, invoice number, PO number, line items (product code, qty, unit price)
-- Validates output against `InvoiceData` Pydantic schema
-- Computes SHA-256 hash for deduplication
-
-### 2. Matcher Agent (`agents/matcher.py`)
-- Queries ChromaDB for relevant business rules via RAG
-- Compares invoice line items against PO records from SQLite
-- Applies configurable tolerances (quantity ±2%, price ±5%)
-- Outputs: MATCHED, PARTIAL_MATCH, or MISMATCH with field-level diff
-
-### 3. Exception Handler Agent (`agents/exception_handler.py`)
-- Classifies exceptions by severity: HIGH / MEDIUM / LOW
-- Writes exceptions to SQLite `exceptions` table
-- Updates invoice status: MATCHED / EXCEPTION
-- Generates a structured exception report dict
-
-### 4. LangGraph Orchestration (`agents/graph.py`)
-- `StateGraph` with typed `ReconState`
-- Nodes: `extract` → `match` → `handle_exceptions` → `END`
-- Full state passed between nodes for traceability
-
----
-
-## Streamlit UI Tabs
-
-| Tab | Description |
-|---|---|
-| **Run Pipeline** | Upload invoice JSON and trigger full reconciliation pipeline |
-| **Exception Report** | Browse all exceptions with severity filter, export to CSV |
-| **Dashboard** | Metrics: total invoices, match rate, exception counts by severity |
-| **Invoice History** | Browse all processed invoices and their statuses |
-
----
-
-## Sample Invoice Format
-
-```json
-{
-  "invoice_number": "INV-2024-001",
-  "vendor_id": "VEND-001",
-  "vendor_name": "Tech Supplies Ltd",
-  "po_number": "PO-2024-001",
-  "invoice_date": "2024-01-15",
-  "line_items": [
-    {
-      "product_code": "LAPTOP-PRO-15",
-      "description": "Professional Laptop 15 inch",
-      "quantity": 10,
-      "unit_price": 1250.00,
-      "total_price": 12500.00
-    }
-  ],
-  "subtotal": 12500.00,
-  "tax": 1250.00,
-  "total_amount": 13750.00,
-  "currency": "USD"
-}
-```
-
----
-
-## Tech Stack
-
-- **LLM**: OpenAI GPT-4o (via `langchain-openai`)
-- **Agent Framework**: LangGraph (`StateGraph`)
-- **RAG / Vector DB**: ChromaDB
-- **Data Validation**: Pydantic v2
-- **Database**: SQLite (built-in)
-- **UI**: Streamlit + Plotly
-- **Testing**: pytest + pytest-cov
-- **Language**: Python 3.10+
+### Observability
+- Pipeline logs stored in `pipeline_logs` table
+- Streamlit log viewer with run_id filtering
+- Mismatch metrics dashboard with charts
 
 ---
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
-
----
-
-*Built as a capstone project demonstrating multi-agent AI systems for financial operations automation.*
-
-
-### 📊 Data Generation & Seeding
-To train the RAG system and test the agents with a large volume of realistic data, run:
-```bash
-python scripts/generate_data.py
-```
-This will:
-1. Create 1000 orders in the `data/order_recon.db`.
-2. Generate 1000 corresponding invoice JSON files in `data/invoices/`.
-3. Randomly introduce common discrepancies (price, quantity, SKU) for testing.
-
-### 🚀 Getting Started
-1. Clone the repository.
-2. Install dependencies: `pip install -r requirements.txt`.
-3. Set up your `.env` with `OPENAI_API_KEY`.
-4. Run the data generator: `python scripts/generate_data.py`.
-5. Start the UI: `streamlit run streamlit_app/main.py`.
+MIT
