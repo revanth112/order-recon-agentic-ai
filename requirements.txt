@@ -9,6 +9,7 @@ langchain-community>=0.0.36
 langgraph>=0.0.40
 langchain-core>=0.1.23
 langchain-text-splitters>=0.0.1
+tiktoken>=0.6.0
 
 # Azure Identity (optional: for Managed Identity / Entra auth)
 azure-identity>=1.15.0
