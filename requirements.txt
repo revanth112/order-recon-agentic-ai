@@ -1,4 +1,5 @@
 # requirements.txt - Order Reconciliation Agentic AI
+# Uses Azure AI Foundry OpenAI SDK v1.x (openai package with Azure base_url)
 
 # Core LLM & Agent Framework
 openai>=1.14.0
@@ -8,6 +9,9 @@ langchain-community>=0.0.36
 langgraph>=0.0.40
 langchain-core>=0.1.23
 langchain-text-splitters>=0.0.1
+
+# Azure Identity (optional: for Managed Identity / Entra auth)
+azure-identity>=1.15.0
 
 # Vector Store & Embeddings
 chromadb>=0.4.24
@@ -30,9 +34,5 @@ tiktoken>=0.6.0
 numpy>=1.26.4
 
 # Testing
-pytest>=8.1.1
-pytest-cov>=5.0.0
-
-# Document loading for RAG
-unstructured>=0.13.0
-pdfminer.six>=20231228
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
