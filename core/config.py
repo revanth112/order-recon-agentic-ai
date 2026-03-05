@@ -13,7 +13,7 @@ AZURE_OPENAI_ENDPOINT = os.getenv(
     "AZURE_OPENAI_ENDPOINT",
     "https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1/"
 )
-
+AZURE_OPENAI_API_VERSION  = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01")
 # Deployment / model name as set in Azure AI Foundry
 OPENAI_MODEL = os.getenv("AZURE_CHAT_DEPLOYMENT", "gpt-4o")
 AZURE_EMBED_DEPLOYMENT = os.getenv("AZURE_EMBED_DEPLOYMENT", "text-embedding-ada-002")
