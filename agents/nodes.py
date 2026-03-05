@@ -105,7 +105,16 @@ def exception_handler_node(state: ReconState) -> ReconState:
         message=f"[EXCEPTION_HANDLER] Processing {len(discrepancies)} discrepancies...",
     )
 
-    handle_exceptions(recon_id, discrepancies)
+    extracted = state.get("extracted_data", {})
+    handle_exceptions(
+        recon_id,
+        discrepancies,
+        invoice_id=state["invoice_id"],
+        invoice_number=extracted.get("invoice_number"),
+        vendor_id=extracted.get("vendor_id"),
+        vendor_name=extracted.get("vendor_name"),
+        po_number=extracted.get("po_number"),
+    )
 
     status = "COMPLETED"
     msg_done = f"[EXCEPTION_HANDLER] Done. Final status={status}"

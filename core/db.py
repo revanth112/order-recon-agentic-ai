@@ -97,16 +97,23 @@ def init_db():
     );
 
     CREATE TABLE IF NOT EXISTS exceptions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        reconciliation_id INTEGER NOT NULL,
-        type TEXT,
-        severity TEXT,
-        description TEXT,
-        auto_action TEXT,
-        resolved INTEGER DEFAULT 0,
-        resolved_by TEXT,
-        resolved_at TEXT,
-        FOREIGN KEY (reconciliation_id) REFERENCES reconciliations(id)
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        reconciliation_id   INTEGER NOT NULL,
+        invoice_id          INTEGER,
+        invoice_number      TEXT,
+        vendor_id           TEXT,
+        vendor_name         TEXT,
+        po_number           TEXT,
+        product_code        TEXT,
+        type                TEXT,
+        severity            TEXT,
+        description         TEXT,
+        auto_action         TEXT,
+        resolved            INTEGER DEFAULT 0,
+        resolved_by         TEXT,
+        resolved_at         TEXT,
+        FOREIGN KEY (reconciliation_id) REFERENCES reconciliations(id),
+        FOREIGN KEY (invoice_id)        REFERENCES invoices(id)
     );
 
     CREATE TABLE IF NOT EXISTS invoice_templates (
@@ -147,4 +154,25 @@ def init_db():
     """
     with get_connection() as conn:
         conn.executescript(schema)
+        _migrate_exceptions_columns(conn)
     print(f"Database initialized at {SQLITE_DB_PATH}")
+
+
+def _migrate_exceptions_columns(conn):
+    """Add new context columns to exceptions table if they don't exist yet (idempotent)."""
+    _ALLOWED_TYPES = {"INTEGER", "TEXT", "REAL", "BLOB", "NUMERIC"}
+    new_cols = [
+        ("invoice_id",     "INTEGER"),
+        ("invoice_number", "TEXT"),
+        ("vendor_id",      "TEXT"),
+        ("vendor_name",    "TEXT"),
+        ("po_number",      "TEXT"),
+        ("product_code",   "TEXT"),
+    ]
+    for col_name, col_type in new_cols:
+        if col_type not in _ALLOWED_TYPES:
+            raise ValueError(f"Unsupported column type: {col_type}")
+        try:
+            conn.execute(f"ALTER TABLE exceptions ADD COLUMN {col_name} {col_type}")
+        except sqlite3.OperationalError:
+            pass  # column already exists

@@ -229,14 +229,27 @@ def get_reconciliation_lines(recon_id: int) -> list:
 
 # ── Exceptions ────────────────────────────────────────────────────────────────
 
-def insert_exception(recon_id: int, exc_type: str, severity: str,
-                     description: str, auto_action: str):
+def insert_exception(
+    recon_id: int,
+    exc_type: str,
+    severity: str,
+    description: str,
+    auto_action: str,
+    invoice_id: int = None,
+    invoice_number: str = None,
+    vendor_id: str = None,
+    vendor_name: str = None,
+    po_number: str = None,
+    product_code: str = None,
+):
     with get_connection() as conn:
         conn.execute(
             """INSERT INTO exceptions
-               (reconciliation_id, type, severity, description, auto_action)
-               VALUES (?, ?, ?, ?, ?)""",
-            (recon_id, exc_type, severity, description, auto_action),
+               (reconciliation_id, type, severity, description, auto_action,
+                invoice_id, invoice_number, vendor_id, vendor_name, po_number, product_code)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (recon_id, exc_type, severity, description, auto_action,
+             invoice_id, invoice_number, vendor_id, vendor_name, po_number, product_code),
         )
 
 
@@ -252,6 +265,71 @@ def get_all_exceptions() -> list:
     with get_connection() as conn:
         rows = conn.execute(
             "SELECT * FROM exceptions ORDER BY id DESC").fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_unresolved_exceptions_enriched() -> list:
+    """Return unresolved exceptions with full invoice/vendor/PO context joined in."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """SELECT
+                e.id,
+                e.reconciliation_id,
+                e.invoice_id,
+                COALESCE(e.invoice_number, i.invoice_number) AS invoice_number,
+                COALESCE(e.vendor_id,      i.vendor_id)      AS vendor_id,
+                COALESCE(e.vendor_name,    i.vendor_name)    AS vendor_name,
+                COALESCE(e.po_number,      r.po_number)      AS po_number,
+                e.product_code,
+                e.type,
+                e.severity,
+                e.description,
+                e.auto_action,
+                e.resolved,
+                e.resolved_by,
+                e.resolved_at,
+                i.extraction_confidence,
+                i.status AS invoice_status
+               FROM exceptions e
+               LEFT JOIN reconciliations r ON e.reconciliation_id = r.id
+               LEFT JOIN invoices i        ON r.invoice_id = i.id
+               WHERE e.resolved = 0
+               ORDER BY
+                 CASE e.severity WHEN 'CRITICAL' THEN 0 WHEN 'WARNING' THEN 1 ELSE 2 END,
+                 e.id DESC"""
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_all_exceptions_enriched() -> list:
+    """Return all exceptions with full invoice/vendor/PO context joined in."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """SELECT
+                e.id,
+                e.reconciliation_id,
+                e.invoice_id,
+                COALESCE(e.invoice_number, i.invoice_number) AS invoice_number,
+                COALESCE(e.vendor_id,      i.vendor_id)      AS vendor_id,
+                COALESCE(e.vendor_name,    i.vendor_name)    AS vendor_name,
+                COALESCE(e.po_number,      r.po_number)      AS po_number,
+                e.product_code,
+                e.type,
+                e.severity,
+                e.description,
+                e.auto_action,
+                e.resolved,
+                e.resolved_by,
+                e.resolved_at,
+                i.extraction_confidence,
+                i.status AS invoice_status
+               FROM exceptions e
+               LEFT JOIN reconciliations r ON e.reconciliation_id = r.id
+               LEFT JOIN invoices i        ON r.invoice_id = i.id
+               ORDER BY
+                 CASE e.severity WHEN 'CRITICAL' THEN 0 WHEN 'WARNING' THEN 1 ELSE 2 END,
+                 e.id DESC"""
+        ).fetchall()
         return [dict(r) for r in rows]
 
 

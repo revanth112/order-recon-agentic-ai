@@ -291,7 +291,9 @@ def run_matcher(invoice_id: int, extracted_data: dict) -> Tuple[int, list]:
     return recon_id, discrepancies
 
 
-def handle_exceptions(recon_id: int, discrepancies: list):
+def handle_exceptions(recon_id: int, discrepancies: list, invoice_id: int = None,
+                      invoice_number: str = None, vendor_id: str = None,
+                      vendor_name: str = None, po_number: str = None):
     """Auto-approve, block, or flag for human review based on discrepancy type."""
     SEVERITY_MAP = {
         "NO_MATCH":           ("CRITICAL", "BLOCKED"),
@@ -311,4 +313,12 @@ def handle_exceptions(recon_id: int, discrepancies: list):
             f"price_diff={d.get('price_diff', 'N/A')}. "
             f"Rule: {d.get('rule', 'N/A')}"
         )
-        repo.insert_exception(recon_id, exc_type, severity, description, auto_action)
+        repo.insert_exception(
+            recon_id, exc_type, severity, description, auto_action,
+            invoice_id=invoice_id,
+            invoice_number=invoice_number,
+            vendor_id=vendor_id,
+            vendor_name=vendor_name,
+            po_number=po_number,
+            product_code=d.get("product_code"),
+        )

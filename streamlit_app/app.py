@@ -383,34 +383,86 @@ elif page == "Exceptions Dashboard":
     exc_tab1, exc_tab2 = st.tabs(["🔴 Unresolved", "📁 All Exceptions"])
 
     with exc_tab1:
-        exceptions = repo.get_unresolved_exceptions()
+        exceptions = repo.get_unresolved_exceptions_enriched()
 
         if not exceptions:
             st.success("No unresolved exceptions! All reconciliations are clean.")
         else:
-            st.warning(f"{len(exceptions)} unresolved exception(s) need attention.")
+            # Summary metrics
+            critical_count = sum(1 for e in exceptions if e.get("severity") == "CRITICAL")
+            warning_count  = sum(1 for e in exceptions if e.get("severity") == "WARNING")
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Total Unresolved", len(exceptions))
+            col2.metric("🔴 Critical", critical_count)
+            col3.metric("🟡 Warning", warning_count)
 
-            df = pd.DataFrame(exceptions)
-            st.dataframe(df, use_container_width=True)
-
-            st.subheader("Resolve an Exception")
-            exc_id = st.number_input("Exception ID to resolve", min_value=1, step=1)
-            resolved_by = st.text_input("Your name / ID")
-
-            if st.button("Mark as Resolved"):
-                if resolved_by.strip():
-                    repo.resolve_exception(
-                        int(exc_id),
-                        resolved_by.strip(),
-                        datetime.now(timezone.utc).isoformat(),
+            # Group by severity
+            for severity_label, severity_key, icon in [
+                ("Critical", "CRITICAL", "🔴"),
+                ("Warning",  "WARNING",  "🟡"),
+                ("Info",     "INFO",     "🟢"),
+            ]:
+                group = [e for e in exceptions if e.get("severity") == severity_key]
+                if not group:
+                    continue
+                st.markdown(f"### {icon} {severity_label} ({len(group)})")
+                for exc in group:
+                    exc_label = (
+                        f"{icon} #{exc['id']} — {exc.get('type', 'UNKNOWN')} | "
+                        f"Invoice: {exc.get('invoice_number') or 'N/A'} | "
+                        f"Vendor: {exc.get('vendor_name') or 'N/A'}"
                     )
-                    st.success(f"Exception #{exc_id} resolved by {resolved_by}.")
-                    st.rerun()
-                else:
-                    st.error("Please enter your name/ID before resolving.")
+                    with st.expander(exc_label, expanded=(severity_key == "CRITICAL")):
+                        info_col1, info_col2, info_col3, info_col4 = st.columns(4)
+                        info_col1.markdown(f"**Invoice #**\n{exc.get('invoice_number') or '—'}")
+                        info_col2.markdown(f"**Vendor**\n{exc.get('vendor_name') or '—'}")
+                        info_col3.markdown(f"**PO Number**\n{exc.get('po_number') or '—'}")
+                        info_col4.markdown(f"**Product Code**\n{exc.get('product_code') or '—'}")
+
+                        badge_col1, badge_col2 = st.columns(2)
+                        badge_col1.info(f"Type: **{exc.get('type', 'UNKNOWN')}**")
+                        badge_col2.warning(f"Severity: **{exc.get('severity', 'N/A')}**")
+
+                        st.markdown(f"**Description:** {exc.get('description', '')}")
+                        st.markdown(f"**Auto Action:** `{exc.get('auto_action', 'N/A')}`")
+
+                        # View Invoice Lines
+                        if exc.get("invoice_id"):
+                            with st.expander("📄 View Invoice Lines"):
+                                inv_lines = repo.get_invoice_lines(exc["invoice_id"])
+                                if inv_lines:
+                                    st.dataframe(pd.DataFrame(inv_lines), use_container_width=True)
+                                else:
+                                    st.info("No invoice lines found.")
+
+                        # View Reconciliation Lines
+                        if exc.get("reconciliation_id"):
+                            with st.expander("🔗 View Reconciliation Lines"):
+                                recon_lines = repo.get_reconciliation_lines(exc["reconciliation_id"])
+                                if recon_lines:
+                                    st.dataframe(pd.DataFrame(recon_lines), use_container_width=True)
+                                else:
+                                    st.info("No reconciliation lines found.")
+
+                        # Resolve form
+                        st.markdown("---")
+                        resolved_by_input = st.text_input(
+                            "Your name / ID", key=f"resolved_by_{exc['id']}"
+                        )
+                        if st.button("✅ Mark as Resolved", key=f"resolve_{exc['id']}"):
+                            if resolved_by_input.strip():
+                                repo.resolve_exception(
+                                    exc["id"],
+                                    resolved_by_input.strip(),
+                                    datetime.now(timezone.utc).isoformat(),
+                                )
+                                st.success(f"Exception #{exc['id']} resolved by {resolved_by_input}.")
+                                st.rerun()
+                            else:
+                                st.error("Please enter your name/ID before resolving.")
 
     with exc_tab2:
-        all_exceptions = repo.get_all_exceptions()
+        all_exceptions = repo.get_all_exceptions_enriched()
         if not all_exceptions:
             st.info("No exceptions recorded yet.")
         else:
@@ -429,7 +481,10 @@ elif page == "Exceptions Dashboard":
                 sev_counts = all_exc_df["severity"].value_counts()
                 st.bar_chart(sev_counts)
 
-            st.dataframe(all_exc_df, use_container_width=True)
+            display_cols = ["id", "invoice_number", "vendor_name", "po_number", "product_code",
+                            "type", "severity", "auto_action", "description", "resolved", "resolved_by"]
+            available_cols = [c for c in display_cols if c in all_exc_df.columns]
+            st.dataframe(all_exc_df[available_cols], use_container_width=True)
 
             csv = all_exc_df.to_csv(index=False)
             st.download_button(
