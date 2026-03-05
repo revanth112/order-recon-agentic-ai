@@ -67,6 +67,28 @@ def get_invoice_lines(invoice_id: int) -> list:
 
 # ── Orders ────────────────────────────────────────────────────────────────────
 
+def get_all_orders() -> list:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM orders ORDER BY created_at DESC").fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_order_by_id(order_id: int) -> Optional[dict]:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM orders WHERE id=?",
+                           (order_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def get_order_lines(order_id: int) -> list:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM order_lines WHERE order_id=?",
+            (order_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+
 def get_order_candidates(vendor_id: str) -> list:
     with get_connection() as conn:
         rows = conn.execute(
@@ -107,6 +129,28 @@ def update_reconciliation(recon_id: int, overall_status: str,
                WHERE id=?""",
             (overall_status, confidence, completed_at, latency_ms, recon_id),
         )
+
+
+def get_all_reconciliations() -> list:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM reconciliations ORDER BY id DESC").fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_reconciliation_by_id(recon_id: int) -> Optional[dict]:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM reconciliations WHERE id=?",
+                           (recon_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def get_reconciliations_for_invoice(invoice_id: int) -> list:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM reconciliations WHERE invoice_id=? ORDER BY id DESC",
+            (invoice_id,)).fetchall()
+        return [dict(r) for r in rows]
 
 
 def insert_reconciliation_line(recon_id: int, invoice_line_id: int,
@@ -153,6 +197,21 @@ def get_unresolved_exceptions() -> list:
         return [dict(r) for r in rows]
 
 
+def get_all_exceptions() -> list:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM exceptions ORDER BY id DESC").fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_exceptions_for_reconciliation(recon_id: int) -> list:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM exceptions WHERE reconciliation_id=? ORDER BY id DESC",
+            (recon_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+
 def resolve_exception(exception_id: int, resolved_by: str, resolved_at: str):
     with get_connection() as conn:
         conn.execute(
@@ -173,6 +232,14 @@ def get_latest_template(vendor_id: str) -> Optional[dict]:
             (vendor_id,),
         ).fetchone()
         return dict(row) if row else None
+
+
+def get_all_templates() -> list:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM invoice_templates ORDER BY last_seen_at DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
 
 
 def upsert_template(vendor_id: str, template_hash: str):
