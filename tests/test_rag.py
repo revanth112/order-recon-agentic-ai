@@ -1,17 +1,17 @@
 # tests/test_rag.py
 # Unit tests for the RAG system (core/rules_rag.py)
-# All tests use mocks - NO OpenAI API key required to run.
+# All tests use mocks - NO Azure OpenAI API key required to run.
 #
 # Test coverage:
-#   1. _load_rules_docs()   - loads .md and .txt files from rules dir
-#   2. _load_rules_docs()   - returns empty list if no files exist
-#   3. init_rules_rag()     - skips rebuild when chain already loaded
-#   4. init_rules_rag()     - raises FileNotFoundError when no docs found
-#   5. init_rules_rag()     - builds vectorstore and LCEL chain correctly
-#   6. ask_rules()          - auto-inits on first call
-#   7. ask_rules()          - calls chain.invoke() with the exact question
-#   8. ask_rules()          - always returns a string
-#   9. reload_rules()       - calls init_rules_rag(force_reload=True)
+#   1. _load_rules_docs()    - loads .md and .txt files from rules dir
+#   2. _load_rules_docs()    - returns empty list if no files exist
+#   3. init_rules_rag()      - skips rebuild when chain already loaded
+#   4. init_rules_rag()      - raises FileNotFoundError when no docs found
+#   5. init_rules_rag()      - builds vectorstore and LCEL chain correctly
+#   6. ask_rules()           - auto-inits on first call
+#   7. ask_rules()           - calls chain.invoke() with the exact question
+#   8. ask_rules()           - always returns a string
+#   9. reload_rules()        - calls init_rules_rag(force_reload=True)
 
 import pytest
 from unittest.mock import MagicMock, patch
@@ -80,7 +80,6 @@ def test_init_rules_rag_skips_if_already_initialised():
     with patch.object(rag, "_load_rules_docs") as mock_load:
         rag.init_rules_rag(force_reload=False)
         mock_load.assert_not_called()
-
     assert rag._qa_chain is fake_chain
 
 
@@ -98,19 +97,25 @@ def test_init_rules_rag_raises_when_no_docs():
 
 @patch("core.rules_rag.RunnablePassthrough")
 @patch("core.rules_rag.StrOutputParser")
-@patch("core.rules_rag.ChatOpenAI")
+@patch("core.rules_rag.AzureChatOpenAI")        # Updated: was ChatOpenAI
 @patch("core.rules_rag.PromptTemplate")
 @patch("core.rules_rag.Chroma")
-@patch("core.rules_rag.OpenAIEmbeddings")
+@patch("core.rules_rag.AzureOpenAIEmbeddings")  # Updated: was OpenAIEmbeddings
 @patch("core.rules_rag.RecursiveCharacterTextSplitter")
 def test_init_rules_rag_builds_chain_correctly(
-    MockSplitter, MockEmbeddings, MockChroma,
-    MockPrompt, MockLLM, MockParser, MockPassthrough
+    MockSplitter,
+    MockEmbeddings,
+    MockChroma,
+    MockPrompt,
+    MockLLM,
+    MockParser,
+    MockPassthrough,
 ):
     """Should create vectorstore and set _qa_chain when docs are present."""
     import importlib
     import core.rules_rag as rag
     importlib.reload(rag)
+
     rag._qa_chain = None
     rag._vectorstore = None
 
@@ -146,8 +151,7 @@ def test_ask_rules_auto_inits_on_first_call():
 
     with patch.object(rag, "init_rules_rag", side_effect=side_effect) as mock_init:
         result = rag.ask_rules("What is the price tolerance?")
-
-    mock_init.assert_called_once()
+        mock_init.assert_called_once()
     assert result == "Prices must match within 5%."
 
 
@@ -163,7 +167,6 @@ def test_ask_rules_calls_invoke_with_exact_question():
 
     question = "What happens when product code is not in any open PO?"
     result = rag.ask_rules(question)
-
     fake_chain.invoke.assert_called_once_with(question)
     assert result == "Flag as CRITICAL exception."
 
