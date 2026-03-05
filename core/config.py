@@ -40,6 +40,21 @@ CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.8"))
 PRICE_TOLERANCE_PCT  = float(os.getenv("PRICE_TOLERANCE_PCT",  "0.05"))
 QTY_TOLERANCE_PCT    = float(os.getenv("QTY_TOLERANCE_PCT",    "0.05"))
 
+# Per-vendor tolerance overrides (price_pct, qty_pct).
+# Falls back to PRICE_TOLERANCE_PCT / QTY_TOLERANCE_PCT for unknown vendors.
+VENDOR_TOLERANCES: dict = {
+    "V-001": {"price_pct": 0.02, "qty_pct": 0.05},   # Acme Supplies Ltd - 2% price, 5% qty
+    "V-002": {"price_pct": 0.05, "qty_pct": 0.10},   # GlobalTech - 5% price, 10% qty
+    "V-003": {"price_pct": 0.01, "qty_pct": 0.03},   # FastParts - strict 1% price, 3% qty
+    "V-004": {"price_pct": 0.05, "qty_pct": 0.05},
+    "V-005": {"price_pct": 0.05, "qty_pct": 0.05},
+    "V-006": {"price_pct": 0.03, "qty_pct": 0.05},
+    "V-007": {"price_pct": 0.05, "qty_pct": 0.05},
+    "V-008": {"price_pct": 0.05, "qty_pct": 0.08},
+    "V-009": {"price_pct": 0.05, "qty_pct": 0.05},
+    "V-010": {"price_pct": 0.04, "qty_pct": 0.05},
+}
+
 # ------------------------------------------------------------------
 # RAG
 # ------------------------------------------------------------------

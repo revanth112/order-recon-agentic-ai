@@ -64,6 +64,15 @@ def matcher_node(state: ReconState) -> ReconState:
     recon_id, discrepancies = run_matcher(invoice_id, state["extracted_data"])
     latency_ms = int((time.time() - start) * 1000)
 
+    # Warn explicitly when the referenced PO does not exist
+    if any(d.get("type") == "INVALID_PO" for d in discrepancies):
+        msg_invalid = (
+            f"[MATCHER] WARNING: Invoice references unknown PO "
+            f"'{state['extracted_data'].get('po_number')}'"
+        )
+        logs.append(msg_invalid)
+        pipeline_logger.log_entry(invoice_id=invoice_id, run_id=run_id, message=msg_invalid)
+
     msg = (
         f"[MATCHER] Done. recon_id={recon_id}, "
         f"discrepancies={len(discrepancies)}, latency={latency_ms}ms"

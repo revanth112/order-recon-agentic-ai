@@ -31,6 +31,16 @@ def update_invoice_status(invoice_id: int, status: str,
                          (status, invoice_id))
 
 
+def update_invoice_extracted_fields(invoice_id: int, currency: Optional[str],
+                                    invoice_date: Optional[str]):
+    """Persist currency and invoice_date extracted by the AI onto the invoice record."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE invoices SET currency=?, invoice_date=? WHERE id=?",
+            (currency, invoice_date, invoice_id),
+        )
+
+
 def get_invoice_by_id(invoice_id: int) -> Optional[dict]:
     with get_connection() as conn:
         row = conn.execute("SELECT * FROM invoices WHERE id=?",
@@ -49,12 +59,26 @@ def get_all_invoices() -> list:
 
 def insert_invoice_lines(invoice_id: int, lines: list[dict]):
     with get_connection() as conn:
+        # Use explicit .get() for each field so callers don't need to supply
+        # optional fields (description, tax_rate) — prevents binding errors
+        # from SQLite named parameters when keys are absent.
         conn.executemany(
             """INSERT INTO invoice_lines
                (invoice_id, line_number, product_code, description, quantity, unit_price, tax_rate)
                VALUES (:invoice_id, :line_number, :product_code, :description,
                        :quantity, :unit_price, :tax_rate)""",
-            [{**line, "invoice_id": invoice_id} for line in lines],
+            [
+                {
+                    "invoice_id": invoice_id,
+                    "line_number": line.get("line_number"),
+                    "product_code": line.get("product_code"),
+                    "description": line.get("description"),
+                    "quantity": line.get("quantity"),
+                    "unit_price": line.get("unit_price"),
+                    "tax_rate": line.get("tax_rate"),
+                }
+                for line in lines
+            ],
         )
 
 
@@ -87,6 +111,33 @@ def get_order_lines(order_id: int) -> list:
             "SELECT * FROM order_lines WHERE order_id=?",
             (order_id,)).fetchall()
         return [dict(r) for r in rows]
+
+
+def get_order_by_po_and_vendor(po_number: str, vendor_id: str) -> Optional[dict]:
+    """Fetch a single OPEN/PARTIALLY_RECEIVED order matching both po_number AND vendor_id."""
+    with get_connection() as conn:
+        row = conn.execute(
+            """SELECT * FROM orders
+               WHERE po_number=? AND vendor_id=?
+               AND status IN ('OPEN','PARTIALLY_RECEIVED')""",
+            (po_number, vendor_id),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def get_already_reconciled_qty(order_line_id: int) -> float:
+    """Sum invoice quantities already successfully matched against this order line.
+    Used to detect duplicate billing."""
+    with get_connection() as conn:
+        row = conn.execute(
+            """SELECT COALESCE(SUM(il.quantity), 0) as reconciled_qty
+               FROM reconciliation_lines rl
+               JOIN invoice_lines il ON rl.invoice_line_id = il.id
+               WHERE rl.order_line_id = ?
+               AND rl.match_status IN ('MATCHED', 'WITHIN_TOLERANCE')""",
+            (order_line_id,),
+        ).fetchone()
+        return float(row["reconciled_qty"]) if row else 0.0
 
 
 def get_order_candidates(vendor_id: str) -> list:
