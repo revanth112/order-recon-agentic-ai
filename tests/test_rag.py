@@ -16,13 +16,15 @@
 #   8. ask_rules()         - auto-inits on first call (cold start)
 #   9. reload_rules()      - rebuilds the chain from scratch (force reload)
 #  10. validate_input()     - accepts plain text questions
-#  11. validate_input()     - rejects Python code
-#  12. validate_input()     - rejects JavaScript code
-#  13. validate_input()     - rejects HTML tags
-#  14. validate_input()     - rejects SQL queries
-#  15. validate_input()     - rejects empty input
-#  16. validate_input()     - rejects code operators
-#  17. ask_rules()          - rejects code input via validate_input
+#  11. validate_input()     - rejects Python code (def)
+#  12. validate_input()     - rejects Python import statements
+#  13. validate_input()     - rejects JavaScript code
+#  14. validate_input()     - rejects HTML tags
+#  15. validate_input()     - rejects SQL queries
+#  16. validate_input()     - rejects empty input
+#  17. validate_input()     - rejects code operators
+#  18. validate_input()     - rejects markdown code blocks
+#  19. ask_rules()          - rejects code input via validate_input
 
 import importlib
 import pytest

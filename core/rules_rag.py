@@ -28,7 +28,7 @@ _CODE_PATTERNS = re.compile(
     r"|(\{\s*\".+\"\s*:\s*)"                         # JSON-like
     r"|(#include\s*<|int\s+main\s*\()"               # C/C++
     r"|(public\s+static\s+void\s+main)"              # Java
-    r"|(\bfor\s*\(.+;.+;.+\))"                       # C-style for loops
+    r"|(\bfor\s*\(.*;\s*.*;\s*.*\))"                       # C-style for loops
     r"|(=>|&&|\|\||!=|==)"                            # Operators common in code
     r"|(```)"                                         # Markdown code blocks
     r")",
