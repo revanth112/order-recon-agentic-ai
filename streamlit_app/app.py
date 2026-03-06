@@ -346,7 +346,7 @@ if page == "Upload & Run Pipeline":
                     import html as _html_mod
                     safe_summary = _html_mod.escape(summary_text)
                     st.markdown(
-                        f"<p style='font-size:18px;'>💬 {safe_summary}</p>",
+                        f"<p style='font-size:18px;'>💬Summary: {safe_summary}</p>",
                         unsafe_allow_html=True,
                     )
             except Exception as _llm_err:
