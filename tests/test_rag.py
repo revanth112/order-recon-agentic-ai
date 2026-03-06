@@ -15,6 +15,14 @@
 #   7. ask_rules()         - answer is relevant to the question asked
 #   8. ask_rules()         - auto-inits on first call (cold start)
 #   9. reload_rules()      - rebuilds the chain from scratch (force reload)
+#  10. validate_input()     - accepts plain text questions
+#  11. validate_input()     - rejects Python code
+#  12. validate_input()     - rejects JavaScript code
+#  13. validate_input()     - rejects HTML tags
+#  14. validate_input()     - rejects SQL queries
+#  15. validate_input()     - rejects empty input
+#  16. validate_input()     - rejects code operators
+#  17. ask_rules()          - rejects code input via validate_input
 
 import importlib
 import pytest
@@ -273,3 +281,100 @@ def test_reload_rules_rebuilds_chain(tmp_path, monkeypatch):
     assert second_chain is not first_chain, (
         "reload_rules() must create a new chain, not reuse the old one"
     )
+
+
+# ---------------------------------------------------------------------------
+# 10-17 - validate_input() tests -- no API needed
+# ---------------------------------------------------------------------------
+
+def test_validate_input_accepts_plain_text():
+    """Should accept a plain text question."""
+    import core.rules_rag as rag
+    importlib.reload(rag)
+
+    result = rag.validate_input("What is the price tolerance?")
+    assert result == "What is the price tolerance?"
+
+
+def test_validate_input_rejects_python_code():
+    """Should reject input containing Python code."""
+    import core.rules_rag as rag
+    importlib.reload(rag)
+
+    with pytest.raises(ValueError, match="Only plain text questions are accepted"):
+        rag.validate_input("def hello():\n    print('hi')")
+
+
+def test_validate_input_rejects_python_import():
+    """Should reject input containing Python import statements."""
+    import core.rules_rag as rag
+    importlib.reload(rag)
+
+    with pytest.raises(ValueError, match="Only plain text questions are accepted"):
+        rag.validate_input("import os; os.system('ls')")
+
+
+def test_validate_input_rejects_javascript_code():
+    """Should reject input containing JavaScript code."""
+    import core.rules_rag as rag
+    importlib.reload(rag)
+
+    with pytest.raises(ValueError, match="Only plain text questions are accepted"):
+        rag.validate_input("function getData() { return fetch('/api'); }")
+
+
+def test_validate_input_rejects_html_tags():
+    """Should reject input containing HTML tags."""
+    import core.rules_rag as rag
+    importlib.reload(rag)
+
+    with pytest.raises(ValueError, match="Only plain text questions are accepted"):
+        rag.validate_input("<script>alert('xss')</script>")
+
+
+def test_validate_input_rejects_sql_queries():
+    """Should reject input containing SQL queries."""
+    import core.rules_rag as rag
+    importlib.reload(rag)
+
+    with pytest.raises(ValueError, match="Only plain text questions are accepted"):
+        rag.validate_input("SELECT * FROM users WHERE id = 1")
+
+
+def test_validate_input_rejects_empty_input():
+    """Should reject empty or whitespace-only input."""
+    import core.rules_rag as rag
+    importlib.reload(rag)
+
+    with pytest.raises(ValueError, match="Please enter a question"):
+        rag.validate_input("   ")
+
+
+def test_validate_input_rejects_code_operators():
+    """Should reject input containing code-like operators."""
+    import core.rules_rag as rag
+    importlib.reload(rag)
+
+    with pytest.raises(ValueError, match="Only plain text questions are accepted"):
+        rag.validate_input("x => x.map(y => y + 1)")
+
+
+def test_validate_input_rejects_markdown_code_blocks():
+    """Should reject input containing markdown code blocks."""
+    import core.rules_rag as rag
+    importlib.reload(rag)
+
+    with pytest.raises(ValueError, match="Only plain text questions are accepted"):
+        rag.validate_input("```python\nprint('hello')\n```")
+
+
+def test_ask_rules_rejects_code_input():
+    """ask_rules() should reject code input via validate_input."""
+    import core.rules_rag as rag
+    importlib.reload(rag)
+
+    # Set a sentinel chain so ask_rules doesn't try to init
+    rag._qa_chain = object()
+
+    with pytest.raises(ValueError, match="Only plain text questions are accepted"):
+        rag.ask_rules("def foo(): pass")

@@ -15,7 +15,7 @@ from core import logger as pipeline_logger
 from core.services import compute_template_hash, start_invoice_pipeline
 from core.metrics import get_dashboard_metrics
 from core.config import RULES_DIR, RAG_PERSIST_DIR, azure_openai_client, OPENAI_MODEL
-from core.rules_rag import ask_rules, reload_rules
+from core.rules_rag import ask_rules, reload_rules, validate_input
 from agents.graph import recon_graph
 from streamlit_app.log_viewer import render_log_viewer
 
@@ -797,15 +797,20 @@ elif page == "RAG Management":
 
         if st.button("Ask RAG", type="primary"):
             if custom_question.strip():
-                with st.spinner("Querying RAG system..."):
-                    try:
-                        answer = ask_rules(custom_question.strip())
-                        st.success("RAG Response:")
-                        st.markdown(answer)
-                    except FileNotFoundError as e:
-                        st.error(f"RAG initialization failed: {e}")
-                    except Exception as e:
-                        st.error(f"RAG query failed: {e}")
+                try:
+                    validate_input(custom_question.strip())
+                except ValueError as e:
+                    st.warning(str(e))
+                else:
+                    with st.spinner("Querying RAG system..."):
+                        try:
+                            answer = ask_rules(custom_question.strip())
+                            st.success("RAG Response:")
+                            st.markdown(answer)
+                        except FileNotFoundError as e:
+                            st.error(f"RAG initialization failed: {e}")
+                        except Exception as e:
+                            st.error(f"RAG query failed: {e}")
             else:
                 st.warning("Please enter a question.")
 
@@ -815,18 +820,23 @@ elif page == "RAG Management":
 
         if st.button("Ask & Save to History"):
             if custom_question.strip():
-                with st.spinner("Querying RAG system..."):
-                    try:
-                        answer = ask_rules(custom_question.strip())
-                        st.session_state["rag_history"].append({
-                            "question": custom_question.strip(),
-                            "answer": answer,
-                            "timestamp": datetime.now(timezone.utc).isoformat(),
-                        })
-                        st.success("RAG Response:")
-                        st.markdown(answer)
-                    except Exception as e:
-                        st.error(f"RAG query failed: {e}")
+                try:
+                    validate_input(custom_question.strip())
+                except ValueError as e:
+                    st.warning(str(e))
+                else:
+                    with st.spinner("Querying RAG system..."):
+                        try:
+                            answer = ask_rules(custom_question.strip())
+                            st.session_state["rag_history"].append({
+                                "question": custom_question.strip(),
+                                "answer": answer,
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                            })
+                            st.success("RAG Response:")
+                            st.markdown(answer)
+                        except Exception as e:
+                            st.error(f"RAG query failed: {e}")
 
         if st.session_state.get("rag_history"):
             st.markdown("---")

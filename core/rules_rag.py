@@ -1,4 +1,5 @@
 # core/rules_rag.py - RAG over business rules and reconciliation guidelines
+import re
 from pathlib import Path
 from typing import List
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -15,6 +16,23 @@ from .config import (
     AZURE_OPENAI_ENDPOINT,
     AZURE_EMBED_DEPLOYMENT,
     AZURE_OPENAI_API_VERSION,
+)
+
+# Patterns that indicate code or non-text input
+_CODE_PATTERNS = re.compile(
+    r"("
+    r"(def |class |import |from .+ import )"        # Python
+    r"|(\bfunction\b\s+\w+\s*\(|\bconst\b\s+\w+\s*=)"    # JavaScript
+    r"|(SELECT\s+.+\s+FROM\s+)"                     # SQL
+    r"|(<\s*/?\s*\w+[^>]*>)"                         # HTML/XML tags
+    r"|(\{\s*\".+\"\s*:\s*)"                         # JSON-like
+    r"|(#include\s*<|int\s+main\s*\()"               # C/C++
+    r"|(public\s+static\s+void\s+main)"              # Java
+    r"|(\bfor\s*\(.+;.+;.+\))"                       # C-style for loops
+    r"|(=>|&&|\|\||!=|==)"                            # Operators common in code
+    r"|(```)"                                         # Markdown code blocks
+    r")",
+    re.IGNORECASE,
 )
 
 _vectorstore = None
@@ -77,7 +95,10 @@ def init_rules_rag(force_reload: bool = False):
         input_variables=["context", "question"],
         template=(
             "You are a reconciliation rules expert.\n"
-            "Use the following business rules to answer the question:\n\n"
+            "Use ONLY the following business rules to answer the question.\n"
+            "If the provided rules do not contain information relevant to the "
+            "question, respond exactly with: Sorry, I'm not aware of it.\n"
+            "Do NOT make up or guess any information that is not in the rules.\n\n"
             "{context}\n\n"
             "Question: {question}\n"
             "Answer concisely and cite the rule name if applicable:"
@@ -95,11 +116,33 @@ def init_rules_rag(force_reload: bool = False):
     )
 
 
+def validate_input(question: str) -> str:
+    """Validate that the input is plain text, not code or other non-text content.
+
+    Returns the cleaned question string.
+    Raises ValueError if the input contains code or non-text content.
+    """
+    text = question.strip()
+    if not text:
+        raise ValueError("Please enter a question.")
+    if _CODE_PATTERNS.search(text):
+        raise ValueError(
+            "Only plain text questions are accepted. "
+            "Please remove any code, HTML, or special syntax."
+        )
+    return text
+
+
 def ask_rules(question: str) -> str:
-    """Query the RAG chain with a reconciliation question. Auto-initializes on first call."""
+    """Query the RAG chain with a reconciliation question. Auto-initializes on first call.
+
+    Validates that the input is plain text before querying.
+    Raises ValueError if the input contains code or non-text content.
+    """
+    cleaned = validate_input(question)
     if _qa_chain is None:
         init_rules_rag()
-    return _qa_chain.invoke(question)
+    return _qa_chain.invoke(cleaned)
 
 
 def reload_rules():
