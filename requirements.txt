@@ -15,8 +15,6 @@ tiktoken>=0.6.0
 azure-identity>=1.15.0
 
 # Vector Store & Embeddings
-chromadb>=0.4.24
-
 # Data Validation
 pydantic>=2.6.4
 
