@@ -94,7 +94,8 @@ Create a `.env` file in the project root:
 # Azure AI Foundry - OpenAI SDK v1.x with Azure base_url
 # -------------------------------------------------------
 AZURE_OPENAI_API_KEY=your-azure-openai-api-key-here
-AZURE_OPENAI_ENDPOINT=https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1/
+AZURE_OPENAI_ENDPOINT=https://YOUR-RESOURCE-NAME.openai.azure.com/
+AZURE_OPENAI_API_VERSION = 2024-12-01 //your api version
 
 # Deployment names (as set in Azure AI Foundry)
 AZURE_CHAT_DEPLOYMENT=gpt-4o
@@ -125,7 +126,7 @@ LOG_LEVEL=INFO
 ### 3. Initialize the Database & Generate Data
 
 ```bash
-python scripts/generate_data.py
+python scripts/seed_data.py
 ```
 
 ### 4. Run the Streamlit UI
