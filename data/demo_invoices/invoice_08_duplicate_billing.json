@@ -1,0 +1,19 @@
+{
+  "_demo_scenario": "DUPLICATE BILLING — DEMO-PO-008 has already been fully reconciled (100 units of SKU-A100 were matched in a prior run seeded by seed_data.py). Submitting this invoice attempts to bill for the same 100 units again. Expected result: DUPLICATE_BILLING (CRITICAL / BLOCKED).",
+  "invoice_number": "DEMO-INV-008",
+  "vendor_id": "V-001",
+  "vendor_name": "Acme Supplies Ltd",
+  "invoice_date": "2026-03-08",
+  "po_number": "DEMO-PO-008",
+  "currency": "USD",
+  "line_items": [
+    {
+      "line_number": 1,
+      "product_code": "SKU-A100",
+      "description": "Hex Bolt M8x20",
+      "quantity": 100,
+      "unit_price": 1.25,
+      "tax_rate": 0.10
+    }
+  ]
+}

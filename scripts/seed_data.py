@@ -130,6 +130,67 @@ VENDOR_PRODUCTS = {
 
 NOW = datetime.now(timezone.utc)
 
+# ---------------------------------------------------------------------------
+# Demo order master data — referenced 1-to-1 by data/demo_invoices/*.json
+# Each tuple: (po_number, vendor_id, currency, [(sku, description, qty, price, tax), ...])
+# DEMO-PO-006 is intentionally absent so invoice_06_invalid_po.json triggers INVALID_PO.
+# DEMO-PO-007 uses EUR so invoice_07_currency_mismatch.json (USD) triggers CURRENCY_MISMATCH.
+# DEMO-PO-008 is pre-reconciled below so invoice_08_duplicate_billing.json triggers DUPLICATE_BILLING.
+# ---------------------------------------------------------------------------
+
+DEMO_ORDERS = [
+    ("DEMO-PO-001", "V-001", "USD", [                                  # invoice_01: PERFECT MATCH
+        ("SKU-A100", "Hex Bolt M8x20",            100, 1.25, 0.10),
+        ("SKU-A101", "Flat Washer M8",              50, 0.50, 0.10),
+    ]),
+    ("DEMO-PO-002", "V-001", "USD", [                                  # invoice_02: WITHIN_TOLERANCE
+        ("SKU-A100", "Hex Bolt M8x20",            100, 1.25, 0.10),
+    ]),
+    ("DEMO-PO-003", "V-001", "USD", [                                  # invoice_03: QUANTITY_MISMATCH
+        ("SKU-A100", "Hex Bolt M8x20",            100, 1.25, 0.10),
+    ]),
+    ("DEMO-PO-004", "V-001", "USD", [                                  # invoice_04: PRICE_MISMATCH
+        ("SKU-A100", "Hex Bolt M8x20",            100, 1.25, 0.10),
+    ]),
+    ("DEMO-PO-005", "V-001", "USD", [                                  # invoice_05: NO_MATCH
+        ("SKU-A100", "Hex Bolt M8x20",            100, 1.25, 0.10),
+    ]),
+    # DEMO-PO-006 intentionally absent — invoice_06_invalid_po.json triggers INVALID_PO
+    ("DEMO-PO-007", "V-001", "EUR", [                                  # invoice_07: CURRENCY_MISMATCH
+        ("SKU-A100", "Hex Bolt M8x20",            100, 1.25, 0.10),   # order is EUR; invoice says USD
+    ]),
+    ("DEMO-PO-008", "V-001", "USD", [                                  # invoice_08: DUPLICATE_BILLING
+        ("SKU-A100", "Hex Bolt M8x20",            100, 1.25, 0.10),   # pre-reconciled by seed
+    ]),
+    ("DEMO-PO-009", "V-001", "USD", [                                  # invoice_09: MIXED (PARTIAL_MATCH)
+        ("SKU-A100", "Hex Bolt M8x20",            100, 1.25, 0.10),
+        ("SKU-A101", "Flat Washer M8",              50, 0.50, 0.10),
+        ("SKU-A102", "Hex Nut M8",                  75, 0.75, 0.10),
+    ]),
+    ("DEMO-PO-010", "V-002", "USD", [                                  # invoice_10: BULK WITHIN_TOLERANCE
+        ("SKU-B100", "CAT5e Ethernet Cable 5m",    20, 8.50, 0.00),
+        ("SKU-B101", "USB-C Cable 2m",             30, 6.75, 0.00),
+    ]),
+    ("DEMO-PO-011", "V-003", "USD", [                                  # invoice_11: STRICT VENDOR PRICE_MISMATCH
+        ("SKU-C100", "Pressure Sensor 0-10 bar",   10, 42.00, 0.05),
+    ]),
+    ("DEMO-PO-012", "V-004", "USD", [                                  # invoice_12: MULTIPLE LINES ALL MATCHED
+        ("SKU-D100", "Ball Valve 1/2\" BSP",       50, 18.50, 0.00),
+        ("SKU-D101", "Gate Valve DN25",             20, 24.00, 0.00),
+        ("SKU-D102", "Check Valve DN20",            15, 19.99, 0.00),
+    ]),
+    ("DEMO-PO-013", "V-002", "USD", [                                  # invoice_13: QTY_OUT_OF_TOLERANCE
+        ("SKU-B100", "CAT5e Ethernet Cable 5m",    25, 8.50, 0.00),
+    ]),
+    ("DEMO-PO-014", "V-001", "USD", [                                  # invoice_14: PARTIAL_MATCH
+        ("SKU-A103", "Self-Tapping Screw 4x16",   200, 0.60, 0.10),
+        ("SKU-A104", "Spring Washer M10",          100, 0.90, 0.10),
+    ]),
+    ("DEMO-PO-015", "V-005", "USD", [                                  # invoice_15: SINGLE LINE MATCHED
+        ("SKU-E100", "Centrifugal Pump 0.5kW",      5, 185.00, 0.00),
+    ]),
+]
+
 
 def rand_dt(days_back_max: int, days_back_min: int = 0) -> str:
     """Return a random ISO-format datetime string within the past N days."""
@@ -599,6 +660,108 @@ def seed_pipeline_logs(conn, invoice_records, recon_ids):
     return log_count
 
 
+def seed_demo_orders(conn):
+    """Insert deterministic orders for the 15 demo invoice JSON files in data/demo_invoices/.
+
+    Each DEMO-PO-* entry maps 1-to-1 with a demo JSON so that uploading the
+    file through the UI produces exactly the documented exception type.
+
+    Special case — DEMO-PO-008 (DUPLICATE_BILLING):
+      A prior invoice + reconciliation consuming all 100 units of SKU-A100 is
+      inserted so that invoice_08_duplicate_billing.json triggers a
+      DUPLICATE_BILLING exception when processed by the pipeline.
+    """
+    vendor_name_map = dict(VENDORS)
+    order_date = rand_dt(30, 7)
+    demo_order_map: dict = {}   # po_number -> {"order_id": int, "lines": [(ol_id, sku, qty, price)]}
+
+    for po_number, vendor_id, currency, lines in DEMO_ORDERS:
+        vendor_name = vendor_name_map[vendor_id]
+        conn.execute(
+            """INSERT OR IGNORE INTO orders
+               (po_number, vendor_id, vendor_name, order_date, status, currency)
+               VALUES (?, ?, ?, ?, 'OPEN', ?)""",
+            (po_number, vendor_id, vendor_name, order_date, currency),
+        )
+        order_id = conn.execute(
+            "SELECT id FROM orders WHERE po_number = ?", (po_number,)
+        ).fetchone()[0]
+
+        line_records = []
+        for ln, (sku, desc, qty, price, tax) in enumerate(lines, start=1):
+            conn.execute(
+                """INSERT INTO order_lines
+                   (order_id, line_number, product_code, description,
+                    ordered_qty, unit_price, tax_rate)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (order_id, ln, sku, desc, qty, price, tax),
+            )
+            ol_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            line_records.append((ol_id, sku, qty, price))
+
+        demo_order_map[po_number] = {"order_id": order_id, "lines": line_records}
+
+    # ── DUPLICATE_BILLING setup for DEMO-PO-008 ──────────────────────────────
+    # Create a prior invoice that already reconciled the full ordered qty
+    # (100 × SKU-A100) so that invoice_08_duplicate_billing.json triggers
+    # DUPLICATE_BILLING when the pipeline runs.
+    po8 = demo_order_map.get("DEMO-PO-008")
+    if po8:
+        prior_raw = json.dumps({
+            "invoice_number": "DEMO-INV-PRIOR-008",
+            "po_number": "DEMO-PO-008",
+            "vendor_id": "V-001",
+            "currency": "USD",
+        })
+        conn.execute(
+            """INSERT INTO invoices
+               (invoice_number, vendor_id, vendor_name, invoice_date,
+                currency, raw_json, extraction_confidence, template_hash, status)
+               VALUES (?, 'V-001', 'Acme Supplies Ltd', ?, 'USD', ?, 1.0, ?, 'PROCESSED')""",
+            (
+                "DEMO-INV-PRIOR-008",
+                rand_dt(20, 10),
+                prior_raw,
+                hashlib.md5(b"V-001").hexdigest(),
+            ),
+        )
+        prior_inv_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+        # Prior invoice_line — 100 units of SKU-A100 (exactly the ordered qty)
+        ol_id = po8["lines"][0][0]   # first line is SKU-A100
+        conn.execute(
+            """INSERT INTO invoice_lines
+               (invoice_id, line_number, product_code, description,
+                quantity, unit_price, tax_rate)
+               VALUES (?, 1, 'SKU-A100', 'Hex Bolt M8x20', 100, 1.25, 0.10)""",
+            (prior_inv_id,),
+        )
+        prior_inv_line_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+        # Reconciliation record for the prior invoice
+        started_at = rand_dt(15, 12)
+        completed_at = rand_dt(15, 12)
+        conn.execute(
+            """INSERT INTO reconciliations
+               (invoice_id, po_number, overall_status, reconciliation_confidence,
+                started_at, completed_at, latency_ms)
+               VALUES (?, 'DEMO-PO-008', 'MATCHED', 1.0, ?, ?, 420)""",
+            (prior_inv_id, started_at, completed_at),
+        )
+        prior_recon_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+        # Reconciliation line — MATCHED, consuming all 100 units
+        conn.execute(
+            """INSERT INTO reconciliation_lines
+               (reconciliation_id, invoice_line_id, order_line_id,
+                match_status, quantity_diff, price_diff, applied_rule)
+               VALUES (?, ?, ?, 'MATCHED', 0, 0, 'Exact match')""",
+            (prior_recon_id, prior_inv_line_id, ol_id),
+        )
+
+    return demo_order_map
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -628,6 +791,9 @@ def main():
 
         print("Seeding orders and order_lines …")
         order_ids, order_line_ids = seed_orders_and_lines(conn)
+
+        print("Seeding demo orders for data/demo_invoices/ …")
+        demo_order_map = seed_demo_orders(conn)
 
         print("Seeding invoices and invoice_lines …")
         invoice_records, inv_line_records = seed_invoices_and_lines(
@@ -659,7 +825,7 @@ def main():
 
     total_rows = sum(totals.values())
     print(
-        f"\n✅ Seeded {totals['orders']} orders, "
+        f"\n✅ Seeded {totals['orders']} orders (incl. {len(DEMO_ORDERS)} demo orders), "
         f"{totals['order_lines']} order_lines, "
         f"{totals['invoices']} invoices, "
         f"{totals['invoice_lines']} invoice_lines, "

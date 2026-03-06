@@ -1,0 +1,19 @@
+{
+  "_demo_scenario": "QUANTITY OUT OF TOLERANCE — V-002 (GlobalTech) allows ±10 % qty variance. The invoice ships 30 units against an order for 25 units (+20 %), which exceeds the tolerance. Price is exact. Expected result: QUANTITY_MISMATCH (WARNING / NEEDS_REVIEW).",
+  "invoice_number": "DEMO-INV-013",
+  "vendor_id": "V-002",
+  "vendor_name": "GlobalTech Components",
+  "invoice_date": "2026-03-13",
+  "po_number": "DEMO-PO-013",
+  "currency": "USD",
+  "line_items": [
+    {
+      "line_number": 1,
+      "product_code": "SKU-B100",
+      "description": "CAT5e Ethernet Cable 5m",
+      "quantity": 30,
+      "unit_price": 8.50,
+      "tax_rate": 0.00
+    }
+  ]
+}

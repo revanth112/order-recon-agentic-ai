@@ -1,0 +1,19 @@
+{
+  "_demo_scenario": "NO MATCH SKU — the invoice references a product code (SKU-ZUNK-999) that does not exist in the PO. Expected result: NO_MATCH (CRITICAL / BLOCKED).",
+  "invoice_number": "DEMO-INV-005",
+  "vendor_id": "V-001",
+  "vendor_name": "Acme Supplies Ltd",
+  "invoice_date": "2026-03-05",
+  "po_number": "DEMO-PO-005",
+  "currency": "USD",
+  "line_items": [
+    {
+      "line_number": 1,
+      "product_code": "SKU-ZUNK-999",
+      "description": "Unknown Widget X",
+      "quantity": 100,
+      "unit_price": 1.25,
+      "tax_rate": 0.10
+    }
+  ]
+}

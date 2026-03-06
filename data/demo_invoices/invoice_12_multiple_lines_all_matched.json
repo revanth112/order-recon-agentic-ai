@@ -1,0 +1,35 @@
+{
+  "_demo_scenario": "MULTIPLE LINES ALL MATCHED — three product lines all exactly match the order. Expected result: MATCHED, no exceptions.",
+  "invoice_number": "DEMO-INV-012",
+  "vendor_id": "V-004",
+  "vendor_name": "Premier Industrial",
+  "invoice_date": "2026-03-12",
+  "po_number": "DEMO-PO-012",
+  "currency": "USD",
+  "line_items": [
+    {
+      "line_number": 1,
+      "product_code": "SKU-D100",
+      "description": "Ball Valve 1/2\" BSP",
+      "quantity": 50,
+      "unit_price": 18.50,
+      "tax_rate": 0.00
+    },
+    {
+      "line_number": 2,
+      "product_code": "SKU-D101",
+      "description": "Gate Valve DN25",
+      "quantity": 20,
+      "unit_price": 24.00,
+      "tax_rate": 0.00
+    },
+    {
+      "line_number": 3,
+      "product_code": "SKU-D102",
+      "description": "Check Valve DN20",
+      "quantity": 15,
+      "unit_price": 19.99,
+      "tax_rate": 0.00
+    }
+  ]
+}

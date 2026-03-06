@@ -1,0 +1,19 @@
+{
+  "_demo_scenario": "WITHIN TOLERANCE — small qty/price drift but inside V-001 bands (qty ±5 %, price ±2 %). Expected result: TOLERANCE_VARIANCE (INFO / AUTO_APPROVED), overall MATCHED.",
+  "invoice_number": "DEMO-INV-002",
+  "vendor_id": "V-001",
+  "vendor_name": "Acme Supplies Ltd",
+  "invoice_date": "2026-03-02",
+  "po_number": "DEMO-PO-002",
+  "currency": "USD",
+  "line_items": [
+    {
+      "line_number": 1,
+      "product_code": "SKU-A100",
+      "description": "Hex Bolt M8x20",
+      "quantity": 103,
+      "unit_price": 1.27,
+      "tax_rate": 0.10
+    }
+  ]
+}

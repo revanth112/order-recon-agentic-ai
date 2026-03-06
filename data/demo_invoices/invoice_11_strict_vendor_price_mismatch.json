@@ -1,0 +1,19 @@
+{
+  "_demo_scenario": "STRICT VENDOR PRICE MISMATCH — V-003 (FastParts) has very tight tolerances: qty ±3 %, price ±1 %. The invoice price is 3.6 % above the order price, which exceeds the 1 % limit even though the quantity is exact. Expected result: PRICE_MISMATCH (WARNING / NEEDS_REVIEW).",
+  "invoice_number": "DEMO-INV-011",
+  "vendor_id": "V-003",
+  "vendor_name": "FastParts Inc",
+  "invoice_date": "2026-03-11",
+  "po_number": "DEMO-PO-011",
+  "currency": "USD",
+  "line_items": [
+    {
+      "line_number": 1,
+      "product_code": "SKU-C100",
+      "description": "Pressure Sensor 0-10 bar",
+      "quantity": 10,
+      "unit_price": 43.50,
+      "tax_rate": 0.05
+    }
+  ]
+}

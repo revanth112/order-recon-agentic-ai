@@ -1,0 +1,27 @@
+{
+  "_demo_scenario": "PERFECT MATCH — all lines exactly match the order. Expected result: MATCHED, no exceptions.",
+  "invoice_number": "DEMO-INV-001",
+  "vendor_id": "V-001",
+  "vendor_name": "Acme Supplies Ltd",
+  "invoice_date": "2026-03-01",
+  "po_number": "DEMO-PO-001",
+  "currency": "USD",
+  "line_items": [
+    {
+      "line_number": 1,
+      "product_code": "SKU-A100",
+      "description": "Hex Bolt M8x20",
+      "quantity": 100,
+      "unit_price": 1.25,
+      "tax_rate": 0.10
+    },
+    {
+      "line_number": 2,
+      "product_code": "SKU-A101",
+      "description": "Flat Washer M8",
+      "quantity": 50,
+      "unit_price": 0.50,
+      "tax_rate": 0.10
+    }
+  ]
+}

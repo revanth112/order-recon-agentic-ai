@@ -1,0 +1,19 @@
+{
+  "_demo_scenario": "CURRENCY MISMATCH — the invoice is in USD but the order (DEMO-PO-007) is denominated in EUR. Expected result: CURRENCY_MISMATCH (CRITICAL / BLOCKED).",
+  "invoice_number": "DEMO-INV-007",
+  "vendor_id": "V-001",
+  "vendor_name": "Acme Supplies Ltd",
+  "invoice_date": "2026-03-07",
+  "po_number": "DEMO-PO-007",
+  "currency": "USD",
+  "line_items": [
+    {
+      "line_number": 1,
+      "product_code": "SKU-A100",
+      "description": "Hex Bolt M8x20",
+      "quantity": 100,
+      "unit_price": 1.25,
+      "tax_rate": 0.10
+    }
+  ]
+}
