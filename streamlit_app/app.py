@@ -759,7 +759,7 @@ elif page == "RAG Management":
     #     "⚙️ Manage Index",
     # ])
     rag_tab1 = st.tabs([
-        "📄 Rules Files",])
+        "📄 Rules Files"])
 
     # ---- Tab 1: View Rules Files ----
     with rag_tab1:
