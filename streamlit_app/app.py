@@ -124,7 +124,7 @@ if page == "Upload & Run Pipeline":
     st.title("Invoice Reconciliation Pipeline")
     st.markdown("Upload an invoice JSON and run the multi-agent reconciliation pipeline.")
 
-    uploaded_file = st.file_uploader("", type=["json"])
+    uploaded_file = st.file_uploader("input file", type=["json"])
 
     if uploaded_file is not None:
         # --- Enforce .json extension (defense-in-depth) ----------------------
