@@ -542,80 +542,106 @@ elif page == "Exceptions Dashboard":
         # Try enriched query first, fall back to plain
         try:
             unresolved = repo.get_unresolved_exceptions_enriched()
-        except Exception as e:
-            st.warning(f"Enriched query unavailable, using basic query: {e}")
+        except Exception:
             unresolved = repo.get_unresolved_exceptions()
 
         if not unresolved:
             st.success("✅ No unresolved exceptions — all clear!")
         else:
+            # ── Summary metrics ───────────────────────────────────────────────
             critical_count = sum(1 for e in unresolved if e.get("severity") == "CRITICAL")
             warning_count  = sum(1 for e in unresolved if e.get("severity") == "WARNING")
             info_count     = sum(1 for e in unresolved if e.get("severity") == "INFO")
 
-            # Summary banner
             col1, col2, col3, col4 = st.columns(4)
             col1.metric("Total Unresolved", len(unresolved))
             col2.metric("🔴 Critical",  critical_count)
             col3.metric("🟡 Warning",   warning_count)
             col4.metric("🟢 Info",      info_count)
+
             st.divider()
 
-            for exc in unresolved:
-                severity   = exc.get("severity", "WARNING")
-                exc_type   = exc.get("type", "UNKNOWN")
-                auto_action= exc.get("auto_action", "NEEDS_REVIEW")
-                exc_id     = exc.get("id")
+            # ── Filters ───────────────────────────────────────────────────────
+            filter_col1, filter_col2, filter_col3 = st.columns(3)
+            with filter_col1:
+                severity_filter = st.selectbox(
+                    "Filter by Severity",
+                    ["All", "CRITICAL", "WARNING", "INFO"],
+                    key="exc_sev_filter",
+                )
+            with filter_col2:
+                type_options = ["All"] + sorted({e.get("type", "UNKNOWN") for e in unresolved})
+                type_filter = st.selectbox("Filter by Type", type_options, key="exc_type_filter")
+            with filter_col3:
+                action_options = ["All"] + sorted({e.get("auto_action", "") for e in unresolved})
+                action_filter = st.selectbox("Filter by Action", action_options, key="exc_action_filter")
 
-                # Severity badge color
-                sev_color = {"CRITICAL": "#ff4444", "WARNING": "#ff9900", "INFO": "#00cc66"}.get(severity, "#888")
-                sev_icon  = {"CRITICAL": "🔴", "WARNING": "🟡", "INFO": "🟢"}.get(severity, "⚪")
+            # Apply filters
+            filtered = unresolved
+            if severity_filter != "All":
+                filtered = [e for e in filtered if e.get("severity") == severity_filter]
+            if type_filter != "All":
+                filtered = [e for e in filtered if e.get("type") == type_filter]
+            if action_filter != "All":
+                filtered = [e for e in filtered if e.get("auto_action") == action_filter]
 
-                # Auto-action pill color
-                act_color = {"BLOCKED": "#ff4444", "NEEDS_REVIEW": "#ff9900", "AUTO_APPROVED": "#00cc66"}.get(auto_action, "#888")
-                act_label = {"BLOCKED": "🚫 BLOCKED", "NEEDS_REVIEW": "👁 NEEDS REVIEW", "AUTO_APPROVED": "✅ AUTO APPROVED"}.get(auto_action, auto_action)
+            st.caption(f"Showing **{len(filtered)}** of **{len(unresolved)}** unresolved exceptions")
 
-                with st.container():
-                    # Header row
-                    st.markdown(
-                        f"""<div style='display:flex; align-items:center; gap:12px; margin-bottom:8px;'>
-                            <span style='background:{sev_color};color:white;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:700;'>{sev_icon} {severity}</span>
-                            <span style='font-size:15px;font-weight:700;color:#e6edf3;'>{exc_type}</span>
-                            <span style='background:{act_color}22;color:{act_color};border:1px solid {act_color};padding:2px 10px;border-radius:10px;font-size:11px;font-weight:600;'>{act_label}</span>
-                            <span style='margin-left:auto;color:#8b949e;font-size:12px;'>Exception #{exc_id}</span>
-                        </div>""",
-                        unsafe_allow_html=True,
-                    )
+            # ── Table ─────────────────────────────────────────────────────────
+            if not filtered:
+                st.info("No exceptions match the selected filters.")
+            else:
+                # Build display DataFrame — map severity/action to readable labels
+                SEV_ICON  = {"CRITICAL": "🔴 CRITICAL", "WARNING": "🟡 WARNING", "INFO": "🟢 INFO"}
+                ACT_LABEL = {"BLOCKED": "🚫 BLOCKED", "NEEDS_REVIEW": "👁 NEEDS REVIEW", "AUTO_APPROVED": "✅ AUTO APPROVED"}
 
-                    # Context row
-                    c1, c2, c3, c4 = st.columns(4)
-                    c1.markdown(f"**📄 Invoice**\n\n`{exc.get('invoice_number') or '—'}`")
-                    c2.markdown(f"**🏢 Vendor**\n\n{exc.get('vendor_name') or '—'}")
-                    c3.markdown(f"**📋 PO Number**\n\n`{exc.get('po_number') or '—'}`")
-                    c4.markdown(f"**🔖 Product Code**\n\n`{exc.get('product_code') or '—'}`")
+                table_rows = []
+                for e in filtered:
+                    table_rows.append({
+                        "ID":             e.get("id"),
+                        "Severity":       SEV_ICON.get(e.get("severity", ""), e.get("severity", "—")),
+                        "Type":           e.get("type", "—"),
+                        "Action":         ACT_LABEL.get(e.get("auto_action", ""), e.get("auto_action", "—")),
+                        "Invoice #":      e.get("invoice_number") or "—",
+                        "Vendor":         e.get("vendor_name") or "—",
+                        "PO Number":      e.get("po_number") or "—",
+                        "Product Code":   e.get("product_code") or "—",
+                        "Description":    (desc := (e.get("description") or ""))[:80] + ("…" if len(desc) > 80 else ""),
+                    })
 
-                    # Description
-                    st.caption(f"📝 {exc.get('description', '')}")
+                exc_df = pd.DataFrame(table_rows)
+                st.dataframe(exc_df, use_container_width=True, hide_index=True)
 
-                    # Resolve form
-                    resolve_col, spacer_col = st.columns([2, 3])
-                    with resolve_col:
-                        resolved_by = st.text_input(
-                            "Resolved by",
-                            key=f"resolve_by_{exc_id}",
-                            placeholder="Enter your name...",
-                            label_visibility="collapsed",
-                        )
-                        if st.button(f"✅ Mark Resolved", key=f"resolve_btn_{exc_id}", type="primary"):
-                            if resolved_by.strip():
-                                resolved_at = datetime.now(timezone.utc).isoformat()
-                                repo.resolve_exception(exc_id, resolved_by.strip(), resolved_at)
-                                st.success(f"Exception #{exc_id} resolved by {resolved_by}")
-                                st.rerun()
-                            else:
-                                st.warning("Please enter your name before resolving.")
+                # ── Resolve section ───────────────────────────────────────────
+                st.divider()
+                st.subheader("✅ Resolve an Exception")
+                st.caption("Select an exception ID from the table above and enter your name to mark it resolved.")
 
-                    st.divider()
+                exc_ids = [e.get("id") for e in filtered]
+                r_col1, r_col2, r_col3 = st.columns([1, 2, 1])
+                with r_col1:
+                    selected_exc_id = st.selectbox("Exception ID", exc_ids, key="resolve_exc_id")
+                with r_col2:
+                    resolved_by = st.text_input("Your name", placeholder="Enter your name...", key="resolve_exc_by")
+                with r_col3:
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    if st.button("✅ Mark Resolved", type="primary", key="resolve_exc_btn", use_container_width=True):
+                        if resolved_by.strip():
+                            resolved_at = datetime.now(timezone.utc).isoformat()
+                            repo.resolve_exception(selected_exc_id, resolved_by.strip(), resolved_at)
+                            st.success(f"✅ Exception #{selected_exc_id} resolved by **{resolved_by.strip()}**")
+                            st.rerun()
+                        else:
+                            st.warning("Please enter your name before resolving.")
+
+                # ── Export ────────────────────────────────────────────────────
+                csv = exc_df.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    "⬇️ Export Unresolved as CSV",
+                    data=csv,
+                    file_name="unresolved_exceptions.csv",
+                    mime="text/csv",
+                )
 
     # ── Tab 2: All Exceptions ────────────────────────────────────────────────
     with tab2:
@@ -624,9 +650,32 @@ elif page == "Exceptions Dashboard":
             st.info("No exceptions recorded yet.")
         else:
             df_exc = pd.DataFrame(all_exc)
-            st.dataframe(df_exc, use_container_width=True)
 
-            # Severity chart
+            # Column filter
+            search_col, search_val = st.columns(2)
+            with search_col:
+                filter_col_name = st.selectbox(
+                    "Filter by column",
+                    ["(no filter)"] + list(df_exc.columns),
+                    key="all_exc_filter_col",
+                )
+            with search_val:
+                filter_col_val = st.text_input("Filter value (contains)", key="all_exc_filter_val")
+
+            if filter_col_name != "(no filter)" and filter_col_val:
+                df_exc = df_exc[
+                    df_exc[filter_col_name].astype(str).str.contains(filter_col_val, case=False, na=False)
+                ]
+                st.caption(f"Showing {len(df_exc)} row(s) matching **{filter_col_name}** contains '{filter_col_val}'")
+
+            col1, col2 = st.columns(2)
+            col1.metric("Total Exceptions", len(df_exc))
+            resolved_count = int(pd.to_numeric(df_exc["resolved"], errors="coerce").fillna(0).sum()) if "resolved" in df_exc.columns else 0
+            col2.metric("Resolved", resolved_count)
+
+            st.dataframe(df_exc, use_container_width=True, hide_index=True)
+
+            # Severity breakdown chart
             if "severity" in df_exc.columns:
                 st.subheader("Exceptions by Severity")
                 sev_counts = df_exc["severity"].value_counts()
@@ -635,9 +684,9 @@ elif page == "Exceptions Dashboard":
             # CSV export
             csv = df_exc.to_csv(index=False).encode("utf-8")
             st.download_button(
-                "⬇️ Export Exceptions CSV",
+                "⬇️ Export All Exceptions CSV",
                 data=csv,
-                file_name="exceptions.csv",
+                file_name="all_exceptions.csv",
                 mime="text/csv",
             )
 
