@@ -50,6 +50,15 @@ def _load_rules_docs() -> list[str]:
     return docs
 
 
+def _build_embeddings():
+    return AzureOpenAIEmbeddings(
+        azure_deployment=AZURE_EMBED_DEPLOYMENT,
+        azure_endpoint=AZURE_OPENAI_ENDPOINT,
+        api_key=AZURE_OPENAI_API_KEY,
+        api_version="2024-02-01",
+    )
+
+
 def init_rules_rag(force_reload: bool = False):
     """Initialize the RAG vectorstore and QA chain. Call once at startup."""
     global _vectorstore, _qa_chain
@@ -57,28 +66,38 @@ def init_rules_rag(force_reload: bool = False):
     if _qa_chain is not None and not force_reload:
         return  # already initialized
 
-    raw_docs = _load_rules_docs()
-    if not raw_docs:
-        raise FileNotFoundError(
-            f"No rules files found in '{RULES_DIR}'. Add .md files first."
+    embeddings = _build_embeddings()
+    persist_path = Path(RAG_PERSIST_DIR)
+
+    # ── Load or build the vectorstore ────────────────────────────────────────
+    if persist_path.exists() and any(persist_path.iterdir()) and not force_reload:
+        # Reuse the already-persisted Chroma index — avoids "Unsupported data type"
+        # error caused by re-inserting documents into an existing collection.
+        _vectorstore = Chroma(
+            persist_directory=RAG_PERSIST_DIR,
+            embedding_function=embeddings,
         )
+    else:
+        # First-time build (or forced reload): embed and persist from scratch
+        raw_docs = _load_rules_docs()
+        if not raw_docs:
+            raise FileNotFoundError(
+                f"No rules files found in '{RULES_DIR}'. Add .md files first."
+            )
 
-    splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
-    chunks = splitter.create_documents(raw_docs)
+        splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
+        chunks = splitter.create_documents(raw_docs)
 
-    # Azure OpenAI Embeddings (uses text-embedding-ada-002 or your deployed model)
-    embeddings = AzureOpenAIEmbeddings(
-        azure_deployment=AZURE_EMBED_DEPLOYMENT,
-        azure_endpoint=AZURE_OPENAI_ENDPOINT,
-        api_key=AZURE_OPENAI_API_KEY,
-        api_version="2024-02-01",   # ← send raw strings, not token IDs (fixes BadRequestError)
-    )
+        # Wipe existing persist dir on force_reload to avoid stale data conflicts
+        if force_reload and persist_path.exists():
+            import shutil
+            shutil.rmtree(persist_path)
 
-    _vectorstore = Chroma.from_documents(
-        documents=chunks,
-        embedding=embeddings,
-        persist_directory=RAG_PERSIST_DIR,
-    )
+        _vectorstore = Chroma.from_documents(
+            documents=chunks,
+            embedding=embeddings,
+            persist_directory=RAG_PERSIST_DIR,
+        )
 
     retriever = _vectorstore.as_retriever(search_kwargs={"k": 3})
 
