@@ -1,0 +1,19 @@
+{
+  "_demo_scenario": "SINGLE LINE MATCHED — a simple one-line invoice that exactly matches the purchase order. Expected result: MATCHED, no exceptions.",
+  "invoice_number": "DEMO-INV-015",
+  "vendor_id": "V-005",
+  "vendor_name": "Sunrise Materials",
+  "invoice_date": "2026-03-15",
+  "po_number": "DEMO-PO-015",
+  "currency": "USD",
+  "line_items": [
+    {
+      "line_number": 1,
+      "product_code": "SKU-E100",
+      "description": "Centrifugal Pump 0.5kW",
+      "quantity": 5,
+      "unit_price": 185.00,
+      "tax_rate": 0.00
+    }
+  ]
+}

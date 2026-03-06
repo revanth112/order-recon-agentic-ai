@@ -1,0 +1,27 @@
+{
+  "_demo_scenario": "BULK WITHIN TOLERANCE — V-002 (GlobalTech) has wider tolerances: qty ±10 %, price ±5 %. Both lines are slightly off but inside those bands. Expected result: TOLERANCE_VARIANCE on both lines (INFO / AUTO_APPROVED), overall MATCHED.",
+  "invoice_number": "DEMO-INV-010",
+  "vendor_id": "V-002",
+  "vendor_name": "GlobalTech Components",
+  "invoice_date": "2026-03-10",
+  "po_number": "DEMO-PO-010",
+  "currency": "USD",
+  "line_items": [
+    {
+      "line_number": 1,
+      "product_code": "SKU-B100",
+      "description": "CAT5e Ethernet Cable 5m",
+      "quantity": 21,
+      "unit_price": 8.75,
+      "tax_rate": 0.00
+    },
+    {
+      "line_number": 2,
+      "product_code": "SKU-B101",
+      "description": "USB-C Cable 2m",
+      "quantity": 32,
+      "unit_price": 7.00,
+      "tax_rate": 0.00
+    }
+  ]
+}

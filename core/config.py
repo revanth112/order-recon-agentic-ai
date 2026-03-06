@@ -1,4 +1,5 @@
 # core/config.py - Load environment variables and global settings
+import logging
 import os
 from openai import AzureOpenAI
 from dotenv import load_dotenv
@@ -66,3 +67,20 @@ RAG_PERSIST_DIR = os.getenv("RAG_PERSIST_DIR", "./data/rules_index")
 # ------------------------------------------------------------------
 ENV       = os.getenv("ENV",       "dev")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+
+# Apply the configured log level to the root logger so all modules respect it.
+_VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+_log_level_upper = LOG_LEVEL.upper()
+if _log_level_upper not in _VALID_LOG_LEVELS:
+    import warnings
+    warnings.warn(
+        f"Invalid LOG_LEVEL '{LOG_LEVEL}' — falling back to 'INFO'. "
+        f"Valid values: {', '.join(sorted(_VALID_LOG_LEVELS))}",
+        stacklevel=1,
+    )
+    _log_level_upper = "INFO"
+
+logging.basicConfig(
+    level=getattr(logging, _log_level_upper),
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)

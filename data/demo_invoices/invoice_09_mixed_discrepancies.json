@@ -1,0 +1,35 @@
+{
+  "_demo_scenario": "MIXED DISCREPANCIES — one line matches exactly, one line has a price far above tolerance, and one line references an unknown SKU. Expected result: PARTIAL_MATCH with PRICE_MISMATCH (WARNING) + NO_MATCH (CRITICAL).",
+  "invoice_number": "DEMO-INV-009",
+  "vendor_id": "V-001",
+  "vendor_name": "Acme Supplies Ltd",
+  "invoice_date": "2026-03-09",
+  "po_number": "DEMO-PO-009",
+  "currency": "USD",
+  "line_items": [
+    {
+      "line_number": 1,
+      "product_code": "SKU-A100",
+      "description": "Hex Bolt M8x20",
+      "quantity": 100,
+      "unit_price": 1.25,
+      "tax_rate": 0.10
+    },
+    {
+      "line_number": 2,
+      "product_code": "SKU-A101",
+      "description": "Flat Washer M8",
+      "quantity": 50,
+      "unit_price": 0.80,
+      "tax_rate": 0.10
+    },
+    {
+      "line_number": 3,
+      "product_code": "SKU-ZUNK-999",
+      "description": "Unknown Part Z",
+      "quantity": 20,
+      "unit_price": 5.00,
+      "tax_rate": 0.10
+    }
+  ]
+}

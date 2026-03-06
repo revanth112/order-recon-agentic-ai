@@ -1,0 +1,27 @@
+{
+  "_demo_scenario": "PARTIAL MATCH — two lines: the first matches exactly, the second has a unit price ~11 % above the order price, exceeding V-001's 2 % tolerance. Expected result: PARTIAL_MATCH with PRICE_MISMATCH (WARNING / NEEDS_REVIEW) on line 2.",
+  "invoice_number": "DEMO-INV-014",
+  "vendor_id": "V-001",
+  "vendor_name": "Acme Supplies Ltd",
+  "invoice_date": "2026-03-14",
+  "po_number": "DEMO-PO-014",
+  "currency": "USD",
+  "line_items": [
+    {
+      "line_number": 1,
+      "product_code": "SKU-A103",
+      "description": "Self-Tapping Screw 4x16",
+      "quantity": 200,
+      "unit_price": 0.60,
+      "tax_rate": 0.10
+    },
+    {
+      "line_number": 2,
+      "product_code": "SKU-A104",
+      "description": "Spring Washer M10",
+      "quantity": 100,
+      "unit_price": 1.00,
+      "tax_rate": 0.10
+    }
+  ]
+}

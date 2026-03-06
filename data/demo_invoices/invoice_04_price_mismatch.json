@@ -1,0 +1,19 @@
+{
+  "_demo_scenario": "PRICE MISMATCH — invoice unit price is ~9.6 % above the order price, well outside V-001's 2 % price tolerance. Quantity is exact. Expected result: PRICE_MISMATCH (WARNING / NEEDS_REVIEW).",
+  "invoice_number": "DEMO-INV-004",
+  "vendor_id": "V-001",
+  "vendor_name": "Acme Supplies Ltd",
+  "invoice_date": "2026-03-04",
+  "po_number": "DEMO-PO-004",
+  "currency": "USD",
+  "line_items": [
+    {
+      "line_number": 1,
+      "product_code": "SKU-A100",
+      "description": "Hex Bolt M8x20",
+      "quantity": 100,
+      "unit_price": 1.37,
+      "tax_rate": 0.10
+    }
+  ]
+}
