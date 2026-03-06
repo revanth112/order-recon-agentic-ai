@@ -32,14 +32,14 @@ def compute_and_log_run_metrics(invoice_ids: list[int]):
     avg_latency = sum(latencies) / len(latencies) if latencies else 0.0
 
     repo.log_metrics_run(
-        invoices_processed=len(invoice_ids),
+        invoice_processed=len(invoice_ids),
         mismatch_rate=mismatch_rate,
         avg_confidence=avg_confidence,
         avg_latency_ms=avg_latency,
     )
 
     return {
-        "invoices_processed": len(invoice_ids),
+        "invoice_processed": len(invoice_ids),
         "mismatch_rate": mismatch_rate,
         "avg_extraction_confidence": avg_confidence,
         "avg_reconciliation_latency_ms": avg_latency,
