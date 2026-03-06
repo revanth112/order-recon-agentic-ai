@@ -161,7 +161,7 @@ def ask_rules(question: str) -> str:
     cleaned = validate_input(question)
     if _qa_chain is None:
         init_rules_rag()
-    return _qa_chain.invoke(cleaned)
+    return _qa_chain.invoke({"question": cleaned})
 
 
 def reload_rules():

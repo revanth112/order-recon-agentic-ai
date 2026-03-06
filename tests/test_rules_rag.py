@@ -122,6 +122,7 @@ def test_ask_rules_returns_string(tmp_path, monkeypatch):
 
     result = rag.ask_rules("What is the quantity tolerance?")
 
+    rag._qa_chain.invoke.assert_called_once_with({"question": "What is the quantity tolerance?"})
     assert isinstance(result, str)
     assert result == "The quantity tolerance is 5%."
 
