@@ -776,7 +776,7 @@ elif page == "RAG Management":
                     content = rule_file.read_text(encoding="utf-8")
                     st.markdown(content)
 
-    ---- Tab 2: Test RAG Queries ----
+    #---- Tab 2: Test RAG Queries ----
     with rag_tab2:
         st.subheader("Test RAG Query Engine")
         st.markdown(
