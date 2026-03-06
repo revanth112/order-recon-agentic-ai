@@ -1,14 +1,13 @@
 # core/rules_rag.py - RAG over business rules and reconciliation guidelines
 import re
-import json
-import hashlib
-import numpy as np
+import shutil
 from pathlib import Path
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.vectorstores import FAISS
 from langchain_openai import AzureOpenAIEmbeddings, AzureChatOpenAI
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnablePassthrough, RunnableLambda
+from langchain_core.runnables import RunnablePassthrough
 from .config import (
     RULES_DIR,
     RAG_PERSIST_DIR,
@@ -36,14 +35,12 @@ _CODE_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_vectorstore = None
 _qa_chain = None
-_chunks: list[str] = []
-_embeddings_matrix: np.ndarray | None = None  # shape: (N, dim)
 
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _load_rules_docs() -> list[str]:
+    """Load all markdown/txt files from the rules directory."""
     rules_path = Path(RULES_DIR)
     docs = []
     for path in sorted(rules_path.glob("*.md")):
@@ -53,7 +50,7 @@ def _load_rules_docs() -> list[str]:
     return docs
 
 
-def _build_embeddings_client() -> AzureOpenAIEmbeddings:
+def _build_embeddings() -> AzureOpenAIEmbeddings:
     return AzureOpenAIEmbeddings(
         azure_deployment=AZURE_EMBED_DEPLOYMENT,
         azure_endpoint=AZURE_OPENAI_ENDPOINT,
@@ -62,63 +59,36 @@ def _build_embeddings_client() -> AzureOpenAIEmbeddings:
     )
 
 
-def _index_path() -> Path:
-    return Path(RAG_PERSIST_DIR)
-
-
-def _save_index(chunks: list[str], matrix: np.ndarray):
-    path = _index_path()
-    path.mkdir(parents=True, exist_ok=True)
-    (path / "chunks.json").write_text(json.dumps(chunks), encoding="utf-8")
-    np.save(str(path / "embeddings.npy"), matrix)
-
-
-def _load_index() -> tuple[list[str], np.ndarray] | None:
-    path = _index_path()
-    chunks_file = path / "chunks.json"
-    emb_file    = path / "embeddings.npy"
-    if chunks_file.exists() and emb_file.exists():
-        chunks = json.loads(chunks_file.read_text(encoding="utf-8"))
-        matrix = np.load(str(emb_file))
-        return chunks, matrix
-    return None
-
-
-def _cosine_similarity(query_vec: np.ndarray, matrix: np.ndarray) -> np.ndarray:
-    """Return cosine similarity between query_vec (1-D) and each row of matrix."""
-    q = query_vec / (np.linalg.norm(query_vec) + 1e-10)
-    norms = np.linalg.norm(matrix, axis=1, keepdims=True) + 1e-10
-    normed = matrix / norms
-    return normed @ q
-
-
-def _retrieve(question: str, k: int = 3) -> str:
-    """Return top-k relevant chunks for the question as a single string."""
-    global _chunks, _embeddings_matrix
-    embed_client = _build_embeddings_client()
-    q_vec = np.array(embed_client.embed_query(question), dtype=np.float32)
-    sims  = _cosine_similarity(q_vec, _embeddings_matrix)
-    top_k = np.argsort(sims)[::-1][:k]
-    return "\n\n".join(_chunks[i] for i in top_k)
-
-
-# ── Public API ────────────────────────────────────────────────────────────────
-
 def init_rules_rag(force_reload: bool = False):
-    """Initialize the RAG index and QA chain."""
-    global _qa_chain, _chunks, _embeddings_matrix
+    """Initialize the RAG vectorstore and QA chain. Call once at startup."""
+    global _vectorstore, _qa_chain
 
     if _qa_chain is not None and not force_reload:
-        return
+        return  # already initialized
 
-    # ── Try loading persisted index ───────────────────────────────────────────
-    loaded = None if force_reload else _load_index()
+    persist_path = Path(RAG_PERSIST_DIR)
 
-    if loaded is not None:
-        _chunks_list, _embeddings_matrix = loaded
-        _chunks = _chunks_list
+    # Detect stale Chroma index and wipe it so FAISS can start fresh
+    chroma_marker = persist_path / "chroma.sqlite3"
+    if chroma_marker.exists():
+        shutil.rmtree(persist_path)
+        # persist_path is now gone; the build-from-scratch path below will recreate it
+
+    # ── Load or build the FAISS vectorstore ──────────────────────────────────
+    faiss_index_file = persist_path / "index.faiss"
+
+    if faiss_index_file.exists() and not force_reload:
+        # Load existing FAISS index from disk.
+        # allow_dangerous_deserialization is required by FAISS's load_local API;
+        # the index is written exclusively by this application's save_local call.
+        embeddings = _build_embeddings()
+        _vectorstore = FAISS.load_local(
+            str(persist_path),
+            embeddings,
+            allow_dangerous_deserialization=True,
+        )
     else:
-        # Build from scratch
+        # Build from scratch — check for docs before making any API calls
         raw_docs = _load_rules_docs()
         if not raw_docs:
             raise FileNotFoundError(
@@ -126,17 +96,20 @@ def init_rules_rag(force_reload: bool = False):
             )
 
         splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
-        doc_chunks = splitter.create_documents(raw_docs)
-        _chunks = [d.page_content for d in doc_chunks]
+        chunks = splitter.create_documents(raw_docs)
 
-        embed_client = _build_embeddings_client()
-        # embed_documents returns list[list[float]] — safe plain Python lists
-        vectors = embed_client.embed_documents(_chunks)
-        _embeddings_matrix = np.array(vectors, dtype=np.float32)
+        # Wipe old index on force_reload
+        if force_reload and persist_path.exists():
+            shutil.rmtree(persist_path)
+        persist_path.mkdir(parents=True, exist_ok=True)
 
-        _save_index(_chunks, _embeddings_matrix)
+        embeddings = _build_embeddings()
+        _vectorstore = FAISS.from_documents(chunks, embeddings)
+        _vectorstore.save_local(str(persist_path))
 
-    # ── Build QA chain ────────────────────────────────────────────────────────
+    retriever = _vectorstore.as_retriever(search_kwargs={"k": 3})
+
+    # Azure Chat LLM
     llm = AzureChatOpenAI(
         azure_deployment=OPENAI_MODEL,
         azure_endpoint=AZURE_OPENAI_ENDPOINT,
@@ -159,14 +132,11 @@ def init_rules_rag(force_reload: bool = False):
         ),
     )
 
-    def build_input(question: str) -> dict:
-        return {
-            "context":  _retrieve(question),
-            "question": question,
-        }
+    def format_docs(docs):
+        return "\n\n".join(doc.page_content for doc in docs)
 
     _qa_chain = (
-        RunnableLambda(build_input)
+        {"context": retriever | format_docs, "question": RunnablePassthrough()}
         | prompt_template
         | llm
         | StrOutputParser()
@@ -174,6 +144,7 @@ def init_rules_rag(force_reload: bool = False):
 
 
 def validate_input(question: str) -> str:
+    """Validate that the input is plain text, not code or other non-text content."""
     text = question.strip()
     if not text:
         raise ValueError("Please enter a question.")
@@ -186,6 +157,7 @@ def validate_input(question: str) -> str:
 
 
 def ask_rules(question: str) -> str:
+    """Query the RAG chain with a reconciliation question."""
     cleaned = validate_input(question)
     if _qa_chain is None:
         init_rules_rag()
