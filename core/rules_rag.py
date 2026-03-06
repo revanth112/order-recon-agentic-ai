@@ -1,13 +1,14 @@
 # core/rules_rag.py - RAG over business rules and reconciliation guidelines
 import re
+import json
+import hashlib
+import numpy as np
 from pathlib import Path
-from typing import List
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import Chroma
 from langchain_openai import AzureOpenAIEmbeddings, AzureChatOpenAI
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnablePassthrough
+from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 from .config import (
     RULES_DIR,
     RAG_PERSIST_DIR,
@@ -21,36 +22,38 @@ from .config import (
 # Patterns that indicate code or non-text input
 _CODE_PATTERNS = re.compile(
     r"("
-    r"(def |class |import |from .+ import )"        # Python
-    r"|(\bfunction\b\s+\w+\s*\(|\bconst\b\s+\w+\s*=)"    # JavaScript
-    r"|(SELECT\s+.+\s+FROM\s+)"                     # SQL
-    r"|(<\s*/?\s*\w+[^>]*>)"                         # HTML/XML tags
-    r"|(\{\s*\".+\"\s*:\s*)"                         # JSON-like
-    r"|(#include\s*<|int\s+main\s*\()"               # C/C++
-    r"|(public\s+static\s+void\s+main)"              # Java
-    r"|(\bfor\s*\(.*;\s*.*;\s*.*\))"                       # C-style for loops
-    r"|(=>|&&|\|\||!=|==)"                            # Operators common in code
-    r"|(```)"                                         # Markdown code blocks
+    r"(def |class |import |from .+ import )"
+    r"|(\bfunction\b\s+\w+\s*\(|\bconst\b\s+\w+\s*=)"
+    r"|(SELECT\s+.+\s+FROM\s+)"
+    r"|(<\s*/?\s*\w+[^>]*>)"
+    r"|(\{\s*\".+\"\s*:\s*)"
+    r"|(#include\s*<|int\s+main\s*\()"
+    r"|(public\s+static\s+void\s+main)"
+    r"|(\bfor\s*\(.*;\s*.*;\s*.*\))"
+    r"|(=>|&&|\|\||!=|==)"
+    r"|(```)"
     r")",
     re.IGNORECASE,
 )
 
-_vectorstore = None
 _qa_chain = None
+_chunks: list[str] = []
+_embeddings_matrix: np.ndarray | None = None  # shape: (N, dim)
 
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _load_rules_docs() -> list[str]:
-    """Load all markdown/txt files from the rules directory."""
     rules_path = Path(RULES_DIR)
     docs = []
-    for path in rules_path.glob("*.md"):
+    for path in sorted(rules_path.glob("*.md")):
         docs.append(path.read_text(encoding="utf-8"))
-    for path in rules_path.glob("*.txt"):
+    for path in sorted(rules_path.glob("*.txt")):
         docs.append(path.read_text(encoding="utf-8"))
     return docs
 
 
-def _build_embeddings():
+def _build_embeddings_client() -> AzureOpenAIEmbeddings:
     return AzureOpenAIEmbeddings(
         azure_deployment=AZURE_EMBED_DEPLOYMENT,
         azure_endpoint=AZURE_OPENAI_ENDPOINT,
@@ -59,26 +62,63 @@ def _build_embeddings():
     )
 
 
+def _index_path() -> Path:
+    return Path(RAG_PERSIST_DIR)
+
+
+def _save_index(chunks: list[str], matrix: np.ndarray):
+    path = _index_path()
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "chunks.json").write_text(json.dumps(chunks), encoding="utf-8")
+    np.save(str(path / "embeddings.npy"), matrix)
+
+
+def _load_index() -> tuple[list[str], np.ndarray] | None:
+    path = _index_path()
+    chunks_file = path / "chunks.json"
+    emb_file    = path / "embeddings.npy"
+    if chunks_file.exists() and emb_file.exists():
+        chunks = json.loads(chunks_file.read_text(encoding="utf-8"))
+        matrix = np.load(str(emb_file))
+        return chunks, matrix
+    return None
+
+
+def _cosine_similarity(query_vec: np.ndarray, matrix: np.ndarray) -> np.ndarray:
+    """Return cosine similarity between query_vec (1-D) and each row of matrix."""
+    q = query_vec / (np.linalg.norm(query_vec) + 1e-10)
+    norms = np.linalg.norm(matrix, axis=1, keepdims=True) + 1e-10
+    normed = matrix / norms
+    return normed @ q
+
+
+def _retrieve(question: str, k: int = 3) -> str:
+    """Return top-k relevant chunks for the question as a single string."""
+    global _chunks, _embeddings_matrix
+    embed_client = _build_embeddings_client()
+    q_vec = np.array(embed_client.embed_query(question), dtype=np.float32)
+    sims  = _cosine_similarity(q_vec, _embeddings_matrix)
+    top_k = np.argsort(sims)[::-1][:k]
+    return "\n\n".join(_chunks[i] for i in top_k)
+
+
+# ── Public API ────────────────────────────────────────────────────────────────
+
 def init_rules_rag(force_reload: bool = False):
-    """Initialize the RAG vectorstore and QA chain. Call once at startup."""
-    global _vectorstore, _qa_chain
+    """Initialize the RAG index and QA chain."""
+    global _qa_chain, _chunks, _embeddings_matrix
 
     if _qa_chain is not None and not force_reload:
-        return  # already initialized
+        return
 
-    embeddings = _build_embeddings()
-    persist_path = Path(RAG_PERSIST_DIR)
+    # ── Try loading persisted index ───────────────────────────────────────────
+    loaded = None if force_reload else _load_index()
 
-    # ── Load or build the vectorstore ────────────────────────────────────────
-    if persist_path.exists() and any(persist_path.iterdir()) and not force_reload:
-        # Reuse the already-persisted Chroma index — avoids "Unsupported data type"
-        # error caused by re-inserting documents into an existing collection.
-        _vectorstore = Chroma(
-            persist_directory=RAG_PERSIST_DIR,
-            embedding_function=embeddings,
-        )
+    if loaded is not None:
+        _chunks_list, _embeddings_matrix = loaded
+        _chunks = _chunks_list
     else:
-        # First-time build (or forced reload): embed and persist from scratch
+        # Build from scratch
         raw_docs = _load_rules_docs()
         if not raw_docs:
             raise FileNotFoundError(
@@ -86,22 +126,17 @@ def init_rules_rag(force_reload: bool = False):
             )
 
         splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
-        chunks = splitter.create_documents(raw_docs)
+        doc_chunks = splitter.create_documents(raw_docs)
+        _chunks = [d.page_content for d in doc_chunks]
 
-        # Wipe existing persist dir on force_reload to avoid stale data conflicts
-        if force_reload and persist_path.exists():
-            import shutil
-            shutil.rmtree(persist_path)
+        embed_client = _build_embeddings_client()
+        # embed_documents returns list[list[float]] — safe plain Python lists
+        vectors = embed_client.embed_documents(_chunks)
+        _embeddings_matrix = np.array(vectors, dtype=np.float32)
 
-        _vectorstore = Chroma.from_documents(
-            documents=chunks,
-            embedding=embeddings,
-            persist_directory=RAG_PERSIST_DIR,
-        )
+        _save_index(_chunks, _embeddings_matrix)
 
-    retriever = _vectorstore.as_retriever(search_kwargs={"k": 3})
-
-    # Azure Chat LLM via langchain_openai AzureChatOpenAI
+    # ── Build QA chain ────────────────────────────────────────────────────────
     llm = AzureChatOpenAI(
         azure_deployment=OPENAI_MODEL,
         azure_endpoint=AZURE_OPENAI_ENDPOINT,
@@ -124,11 +159,14 @@ def init_rules_rag(force_reload: bool = False):
         ),
     )
 
-    def format_docs(docs):
-        return "\n\n".join(doc.page_content for doc in docs)
+    def build_input(question: str) -> dict:
+        return {
+            "context":  _retrieve(question),
+            "question": question,
+        }
 
     _qa_chain = (
-        {"context": retriever | format_docs, "question": RunnablePassthrough()}
+        RunnableLambda(build_input)
         | prompt_template
         | llm
         | StrOutputParser()
@@ -136,11 +174,6 @@ def init_rules_rag(force_reload: bool = False):
 
 
 def validate_input(question: str) -> str:
-    """Validate that the input is plain text, not code or other non-text content.
-
-    Returns the cleaned question string.
-    Raises ValueError if the input contains code or non-text content.
-    """
     text = question.strip()
     if not text:
         raise ValueError("Please enter a question.")
@@ -153,11 +186,6 @@ def validate_input(question: str) -> str:
 
 
 def ask_rules(question: str) -> str:
-    """Query the RAG chain with a reconciliation question. Auto-initializes on first call.
-
-    Validates that the input is plain text before querying.
-    Raises ValueError if the input contains code or non-text content.
-    """
     cleaned = validate_input(question)
     if _qa_chain is None:
         init_rules_rag()
