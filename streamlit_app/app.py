@@ -14,7 +14,7 @@ from core import repositories as repo
 from core import logger as pipeline_logger
 from core.services import compute_template_hash, start_invoice_pipeline
 from core.metrics import get_dashboard_metrics
-from core.config import RULES_DIR, RAG_PERSIST_DIR
+from core.config import RULES_DIR, RAG_PERSIST_DIR, azure_openai_client, OPENAI_MODEL
 from core.rules_rag import ask_rules, reload_rules
 from agents.graph import recon_graph
 from streamlit_app.log_viewer import render_log_viewer
@@ -158,23 +158,38 @@ if page == "Upload & Run Pipeline":
                 "COMPLETED":          "✅ Completed",
             }
 
+            # Severity classification for discrepancy types
+            _CRITICAL_TYPES = {"NO_MATCH", "INVALID_PO", "DUPLICATE_BILLING", "CURRENCY_MISMATCH"}
+            _WARNING_TYPES  = {"QUANTITY_MISMATCH", "PRICE_MISMATCH"}
+
             stepper_placeholder = st.empty()
             log_placeholder     = st.empty()
             current_status      = "UPLOADED"
             live_logs           = []
 
-            def render_stepper(status):
+            def render_stepper(status, outcome="OK"):
+                """Render pipeline stepper. outcome: 'OK', 'NEEDS_REVIEW', or 'BLOCKED'."""
                 if status not in steps:
                     status = steps[-1]
+                # Outcome-based styling for the final COMPLETED step
+                _outcome_cfg = {
+                    "OK":           ("#00cc66", "✅", "✅ Completed"),
+                    "NEEDS_REVIEW": ("#ff9900", "⚠️", "⚠️ Needs Review"),
+                    "BLOCKED":      ("#ff4444", "🚫", "🚫 Blocked"),
+                }
                 cols = stepper_placeholder.columns(len(steps))
                 for i, step in enumerate(steps):
                     done   = steps.index(step) <= steps.index(status)
                     active = step == status
-                    color  = "#00cc66" if done else ("#f0a500" if active else "#555555")
-                    icon   = "✅" if done else ("⏳" if active else "○")
+                    if step == "COMPLETED" and done:
+                        color, icon, label = _outcome_cfg[outcome]
+                    else:
+                        color = "#00cc66" if done else ("#f0a500" if active else "#555555")
+                        icon  = "✅" if done else ("⏳" if active else "○")
+                        label = step_labels[step]
                     cols[i].markdown(
                         f"<div style='text-align:center;color:{color};font-weight:bold;font-size:14px;padding:8px'>"
-                        f"{icon}<br>{step_labels[step]}</div>",
+                        f"{icon}<br>{label}</div>",
                         unsafe_allow_html=True,
                     )
 
@@ -207,8 +222,83 @@ if page == "Upload & Run Pipeline":
             if final_state is None:
                 final_state = initial_state
 
-            render_stepper("COMPLETED")
-            st.success(f"✅ Pipeline completed! Status: {final_state.get('pipeline_status', 'COMPLETED')}")
+            # Determine outcome from discrepancies
+            discrepancies = final_state.get("discrepancies", [])
+            disc_types    = {d.get("type", "UNKNOWN") for d in discrepancies}
+            if disc_types & _CRITICAL_TYPES:
+                outcome = "BLOCKED"
+            elif disc_types & _WARNING_TYPES:
+                outcome = "NEEDS_REVIEW"
+            elif discrepancies and disc_types - {"TOLERANCE_VARIANCE"}:
+                # Any discrepancy type other than auto-approved tolerance variance → review
+                outcome = "NEEDS_REVIEW"
+            else:
+                outcome = "OK"
+
+            render_stepper("COMPLETED", outcome=outcome)
+
+            if outcome == "BLOCKED":
+                blocked_types = sorted(disc_types & _CRITICAL_TYPES)
+                st.error(
+                    f"🚫 Pipeline blocked — critical discrepancies detected: "
+                    f"{', '.join(blocked_types)}. "
+                    "Invoice cannot be approved automatically. Please review in the Exceptions Dashboard."
+                )
+            elif outcome == "NEEDS_REVIEW":
+                review_types = sorted(
+                    disc_types - _CRITICAL_TYPES - {"TOLERANCE_VARIANCE"}
+                )
+                st.warning(
+                    f"⚠️ Pipeline completed with discrepancies"
+                    f"{': ' + ', '.join(review_types) if review_types else ''}. "
+                    "Human review is required before approval."
+                )
+            else:
+                st.success("✅ Pipeline completed! Invoice fully matched — no discrepancies found.")
+
+            # ---- LLM one-line summary ----
+            try:
+                extracted   = final_state.get("extracted_data", {})
+                vendor_name = extracted.get("vendor_name") or invoice_json.get("vendor_name", "Unknown")
+                inv_number  = extracted.get("invoice_number") or "N/A"
+                po_number   = extracted.get("po_number") or "N/A"
+                n_lines     = len(extracted.get("line_items", []))
+
+                _MAX_DISC = 8
+                disc_items = [
+                    f"{d.get('type', 'UNKNOWN')} on {d.get('product_code') or 'N/A'}"
+                    for d in discrepancies[:_MAX_DISC]
+                ]
+                if len(discrepancies) > _MAX_DISC:
+                    disc_items.append(f"… +{len(discrepancies) - _MAX_DISC} more")
+                disc_summary = "; ".join(disc_items) if disc_items else "none"
+
+                summary_prompt = (
+                    f"You are an order reconciliation assistant. "
+                    f"Write exactly ONE concise sentence (≤25 words) summarising the result of this invoice reconciliation:\n"
+                    f"- Vendor: {vendor_name}\n"
+                    f"- Invoice #: {inv_number}\n"
+                    f"- PO: {po_number}\n"
+                    f"- Lines processed: {n_lines}\n"
+                    f"- Discrepancies: {disc_summary}\n"
+                    f"- Outcome: {outcome}\n"
+                    f"Respond with only the summary sentence, no prefix or label."
+                )
+
+                llm_resp = azure_openai_client.chat.completions.create(
+                    model=OPENAI_MODEL,
+                    messages=[{"role": "user", "content": summary_prompt}],
+                    max_tokens=60,
+                    temperature=0.3,
+                )
+                summary_text = llm_resp.choices[0].message.content.strip()
+                if summary_text:
+                    st.caption(f"💬 {summary_text}")
+            except Exception as _llm_err:
+                import logging as _logging
+                _logging.getLogger(__name__).debug(
+                    "LLM summary unavailable: %s", _llm_err
+                )  # best-effort; silently skip if LLM is unavailable
 
     # Show pipeline logs and results
     if "current_invoice_id" in st.session_state:
@@ -444,119 +534,110 @@ elif page == "Order Tracker":
 # ============================================================
 elif page == "Exceptions Dashboard":
     st.title("⚠️ Exceptions Dashboard")
-    st.markdown("Review and resolve reconciliation exceptions requiring human attention.")
 
-    exc_tab1, exc_tab2 = st.tabs(["🔴 Unresolved", "📁 All Exceptions"])
+    tab1, tab2 = st.tabs(["🔴 Unresolved", "📁 All Exceptions"])
 
-    with exc_tab1:
-        exceptions = repo.get_unresolved_exceptions_enriched()
+    # ── Tab 1: Unresolved ────────────────────────────────────────────────────
+    with tab1:
+        # Try enriched query first, fall back to plain
+        try:
+            unresolved = repo.get_unresolved_exceptions_enriched()
+        except Exception as e:
+            st.warning(f"Enriched query unavailable, using basic query: {e}")
+            unresolved = repo.get_unresolved_exceptions()
 
-        if not exceptions:
-            st.success("No unresolved exceptions! All reconciliations are clean.")
+        if not unresolved:
+            st.success("✅ No unresolved exceptions — all clear!")
         else:
-            # Summary metrics
-            critical_count = sum(1 for e in exceptions if e.get("severity") == "CRITICAL")
-            warning_count  = sum(1 for e in exceptions if e.get("severity") == "WARNING")
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Total Unresolved", len(exceptions))
-            col2.metric("🔴 Critical", critical_count)
-            col3.metric("🟡 Warning", warning_count)
+            critical_count = sum(1 for e in unresolved if e.get("severity") == "CRITICAL")
+            warning_count  = sum(1 for e in unresolved if e.get("severity") == "WARNING")
+            info_count     = sum(1 for e in unresolved if e.get("severity") == "INFO")
 
-            # Group by severity
-            for severity_label, severity_key, icon in [
-                ("Critical", "CRITICAL", "🔴"),
-                ("Warning",  "WARNING",  "🟡"),
-                ("Info",     "INFO",     "🟢"),
-            ]:
-                group = [e for e in exceptions if e.get("severity") == severity_key]
-                if not group:
-                    continue
-                st.markdown(f"### {icon} {severity_label} ({len(group)})")
-                for exc in group:
-                    exc_label = (
-                        f"{icon} #{exc['id']} — {exc.get('type', 'UNKNOWN')} | "
-                        f"Invoice: {exc.get('invoice_number') or 'N/A'} | "
-                        f"Vendor: {exc.get('vendor_name') or 'N/A'}"
+            # Summary banner
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("Total Unresolved", len(unresolved))
+            col2.metric("🔴 Critical",  critical_count)
+            col3.metric("🟡 Warning",   warning_count)
+            col4.metric("🟢 Info",      info_count)
+            st.divider()
+
+            for exc in unresolved:
+                severity   = exc.get("severity", "WARNING")
+                exc_type   = exc.get("type", "UNKNOWN")
+                auto_action= exc.get("auto_action", "NEEDS_REVIEW")
+                exc_id     = exc.get("id")
+
+                # Severity badge color
+                sev_color = {"CRITICAL": "#ff4444", "WARNING": "#ff9900", "INFO": "#00cc66"}.get(severity, "#888")
+                sev_icon  = {"CRITICAL": "🔴", "WARNING": "🟡", "INFO": "🟢"}.get(severity, "⚪")
+
+                # Auto-action pill color
+                act_color = {"BLOCKED": "#ff4444", "NEEDS_REVIEW": "#ff9900", "AUTO_APPROVED": "#00cc66"}.get(auto_action, "#888")
+                act_label = {"BLOCKED": "🚫 BLOCKED", "NEEDS_REVIEW": "👁 NEEDS REVIEW", "AUTO_APPROVED": "✅ AUTO APPROVED"}.get(auto_action, auto_action)
+
+                with st.container():
+                    # Header row
+                    st.markdown(
+                        f"""<div style='display:flex; align-items:center; gap:12px; margin-bottom:8px;'>
+                            <span style='background:{sev_color};color:white;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:700;'>{sev_icon} {severity}</span>
+                            <span style='font-size:15px;font-weight:700;color:#e6edf3;'>{exc_type}</span>
+                            <span style='background:{act_color}22;color:{act_color};border:1px solid {act_color};padding:2px 10px;border-radius:10px;font-size:11px;font-weight:600;'>{act_label}</span>
+                            <span style='margin-left:auto;color:#8b949e;font-size:12px;'>Exception #{exc_id}</span>
+                        </div>""",
+                        unsafe_allow_html=True,
                     )
-                    with st.expander(exc_label, expanded=(severity_key == "CRITICAL")):
-                        info_col1, info_col2, info_col3, info_col4 = st.columns(4)
-                        info_col1.markdown(f"**Invoice #**\n{exc.get('invoice_number') or '—'}")
-                        info_col2.markdown(f"**Vendor**\n{exc.get('vendor_name') or '—'}")
-                        info_col3.markdown(f"**PO Number**\n{exc.get('po_number') or '—'}")
-                        info_col4.markdown(f"**Product Code**\n{exc.get('product_code') or '—'}")
 
-                        badge_col1, badge_col2 = st.columns(2)
-                        badge_col1.info(f"Type: **{exc.get('type', 'UNKNOWN')}**")
-                        badge_col2.warning(f"Severity: **{exc.get('severity', 'N/A')}**")
+                    # Context row
+                    c1, c2, c3, c4 = st.columns(4)
+                    c1.markdown(f"**📄 Invoice**\n\n`{exc.get('invoice_number') or '—'}`")
+                    c2.markdown(f"**🏢 Vendor**\n\n{exc.get('vendor_name') or '—'}")
+                    c3.markdown(f"**📋 PO Number**\n\n`{exc.get('po_number') or '—'}`")
+                    c4.markdown(f"**🔖 Product Code**\n\n`{exc.get('product_code') or '—'}`")
 
-                        st.markdown(f"**Description:** {exc.get('description', '')}")
-                        st.markdown(f"**Auto Action:** `{exc.get('auto_action', 'N/A')}`")
+                    # Description
+                    st.caption(f"📝 {exc.get('description', '')}")
 
-                        # View Invoice Lines
-                        if exc.get("invoice_id"):
-                            with st.expander("📄 View Invoice Lines"):
-                                inv_lines = repo.get_invoice_lines(exc["invoice_id"])
-                                if inv_lines:
-                                    st.dataframe(pd.DataFrame(inv_lines), use_container_width=True)
-                                else:
-                                    st.info("No invoice lines found.")
-
-                        # View Reconciliation Lines
-                        if exc.get("reconciliation_id"):
-                            with st.expander("🔗 View Reconciliation Lines"):
-                                recon_lines = repo.get_reconciliation_lines(exc["reconciliation_id"])
-                                if recon_lines:
-                                    st.dataframe(pd.DataFrame(recon_lines), use_container_width=True)
-                                else:
-                                    st.info("No reconciliation lines found.")
-
-                        # Resolve form
-                        st.markdown("---")
-                        resolved_by_input = st.text_input(
-                            "Your name / ID", key=f"resolved_by_{exc['id']}"
+                    # Resolve form
+                    resolve_col, spacer_col = st.columns([2, 3])
+                    with resolve_col:
+                        resolved_by = st.text_input(
+                            "Resolved by",
+                            key=f"resolve_by_{exc_id}",
+                            placeholder="Enter your name...",
+                            label_visibility="collapsed",
                         )
-                        if st.button("✅ Mark as Resolved", key=f"resolve_{exc['id']}"):
-                            if resolved_by_input.strip():
-                                repo.resolve_exception(
-                                    exc["id"],
-                                    resolved_by_input.strip(),
-                                    datetime.now(timezone.utc).isoformat(),
-                                )
-                                st.success(f"Exception #{exc['id']} resolved by {resolved_by_input}.")
+                        if st.button(f"✅ Mark Resolved", key=f"resolve_btn_{exc_id}", type="primary"):
+                            if resolved_by.strip():
+                                resolved_at = datetime.now(timezone.utc).isoformat()
+                                repo.resolve_exception(exc_id, resolved_by.strip(), resolved_at)
+                                st.success(f"Exception #{exc_id} resolved by {resolved_by}")
                                 st.rerun()
                             else:
-                                st.error("Please enter your name/ID before resolving.")
+                                st.warning("Please enter your name before resolving.")
 
-    with exc_tab2:
-        all_exceptions = repo.get_all_exceptions_enriched()
-        if not all_exceptions:
+                    st.divider()
+
+    # ── Tab 2: All Exceptions ────────────────────────────────────────────────
+    with tab2:
+        all_exc = repo.get_all_exceptions()
+        if not all_exc:
             st.info("No exceptions recorded yet.")
         else:
-            all_exc_df = pd.DataFrame(all_exceptions)
+            df_exc = pd.DataFrame(all_exc)
+            st.dataframe(df_exc, use_container_width=True)
 
-            # Summary by severity
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Total Exceptions", len(all_exc_df))
-            resolved_count = int(all_exc_df["resolved"].sum()) if "resolved" in all_exc_df.columns else 0
-            col2.metric("Resolved", resolved_count)
-            col3.metric("Unresolved", len(all_exc_df) - resolved_count)
-
-            # Severity breakdown
-            if "severity" in all_exc_df.columns:
-                st.markdown("**Severity Breakdown:**")
-                sev_counts = all_exc_df["severity"].value_counts()
+            # Severity chart
+            if "severity" in df_exc.columns:
+                st.subheader("Exceptions by Severity")
+                sev_counts = df_exc["severity"].value_counts()
                 st.bar_chart(sev_counts)
 
-            display_cols = ["id", "invoice_number", "vendor_name", "po_number", "product_code",
-                            "type", "severity", "auto_action", "description", "resolved", "resolved_by"]
-            available_cols = [c for c in display_cols if c in all_exc_df.columns]
-            st.dataframe(all_exc_df[available_cols], use_container_width=True)
-
-            csv = all_exc_df.to_csv(index=False)
+            # CSV export
+            csv = df_exc.to_csv(index=False).encode("utf-8")
             st.download_button(
-                label="Export exceptions as CSV",
+                "⬇️ Export Exceptions CSV",
                 data=csv,
-                file_name="all_exceptions.csv",
+                file_name="exceptions.csv",
                 mime="text/csv",
             )
 
