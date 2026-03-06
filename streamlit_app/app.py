@@ -753,10 +753,10 @@ elif page == "RAG Management":
     st.title("🧠 RAG Management")
     st.markdown("View business rules, test the RAG query engine, and reload the index.")
 
-    rag_tab1, rag_tab2, rag_tab3 = st.tabs([
+    (rag_tab1,) = st.tabs([
         "📄 Rules Files",
-        "🔍 Test RAG Queries",
-        "⚙️ Manage Index",
+        # "🔍 Test RAG Queries",   # temporarily disabled
+        # "⚙️ Manage Index",       # temporarily disabled
     ])
     
 
@@ -777,141 +777,141 @@ elif page == "RAG Management":
                     st.markdown(content)
 
     #---- Tab 2: Test RAG Queries ----
-    with rag_tab2:
-        st.subheader("Test RAG Query Engine")
-        st.markdown(
-            "Enter a reconciliation question to test the RAG system. "
-            "The system will retrieve relevant rules and generate an answer."
-        )
+    # with rag_tab2:
+    #     st.subheader("Test RAG Query Engine")
+    #     st.markdown(
+    #         "Enter a reconciliation question to test the RAG system. "
+    #         "The system will retrieve relevant rules and generate an answer."
+    #     )
 
-        # Preset questions
-        preset_questions = [
-            "(Custom question)",
-            "What should happen when a product code is not found in any open PO?",
-            "What is the quantity tolerance for standard products?",
-            "When should an invoice be auto-approved?",
-            "What happens if extraction confidence is below 0.8?",
-            "What is the price tolerance when quantity matches exactly?",
-        ]
+    #     # Preset questions
+    #     preset_questions = [
+    #         "(Custom question)",
+    #         "What should happen when a product code is not found in any open PO?",
+    #         "What is the quantity tolerance for standard products?",
+    #         "When should an invoice be auto-approved?",
+    #         "What happens if extraction confidence is below 0.8?",
+    #         "What is the price tolerance when quantity matches exactly?",
+    #     ]
         
-        selected_preset = st.selectbox("Preset questions", preset_questions, key="rag_preset")
+    #     selected_preset = st.selectbox("Preset questions", preset_questions, key="rag_preset")
         
-        if selected_preset == "(Custom question)":
-            custom_question = st.text_area(
-                "Your custom question",
-                placeholder="Type your question here...",
-                key="rag_question",
-            )
-        else:
-            # Use the preset question directly — no text area shown
-            custom_question = selected_preset
-            st.info(f"📌 Using preset question: _{selected_preset}_")
+    #     if selected_preset == "(Custom question)":
+    #         custom_question = st.text_area(
+    #             "Your custom question",
+    #             placeholder="Type your question here...",
+    #             key="rag_question",
+    #         )
+    #     else:
+    #         # Use the preset question directly — no text area shown
+    #         custom_question = selected_preset
+    #         st.info(f"📌 Using preset question: _{selected_preset}_")
 
-        if st.button("Ask RAG", type="primary"):
-            if custom_question.strip():
-                try:
-                    validate_input(custom_question.strip())
-                except ValueError as e:
-                    st.warning(str(e))
-                else:
-                    with st.spinner("Querying RAG system..."):
-                        try:
-                            answer = ask_rules(custom_question.strip())
-                            st.success("RAG Response:")
-                            st.markdown(answer)
-                        except FileNotFoundError as e:
-                            st.error(f"RAG initialization failed: {e}")
-                        except Exception as e:
-                            st.error(f"RAG query failed: {e}")
-            else:
-                st.warning("Please enter a question.")
+    #     if st.button("Ask RAG", type="primary"):
+    #         if custom_question.strip():
+    #             try:
+    #                 validate_input(custom_question.strip())
+    #             except ValueError as e:
+    #                 st.warning(str(e))
+    #             else:
+    #                 with st.spinner("Querying RAG system..."):
+    #                     try:
+    #                         answer = ask_rules(custom_question.strip())
+    #                         st.success("RAG Response:")
+    #                         st.markdown(answer)
+    #                     except FileNotFoundError as e:
+    #                         st.error(f"RAG initialization failed: {e}")
+    #                     except Exception as e:
+    #                         st.error(f"RAG query failed: {e}")
+    #         else:
+    #             st.warning("Please enter a question.")
 
-        # Query history in session state
-        if "rag_history" not in st.session_state:
-            st.session_state["rag_history"] = []
+    #     # Query history in session state
+    #     if "rag_history" not in st.session_state:
+    #         st.session_state["rag_history"] = []
 
-        if st.button("Ask & Save to History"):
-            if custom_question.strip():
-                try:
-                    validate_input(custom_question.strip())
-                except ValueError as e:
-                    st.warning(str(e))
-                else:
-                    with st.spinner("Querying RAG system..."):
-                        try:
-                            answer = ask_rules(custom_question.strip())
-                            st.session_state["rag_history"].append({
-                                "question": custom_question.strip(),
-                                "answer": answer,
-                                "timestamp": datetime.now(timezone.utc).isoformat(),
-                            })
-                            st.success("RAG Response:")
-                            st.markdown(answer)
-                        except Exception as e:
-                            st.error(f"RAG query failed: {e}")
+    #     if st.button("Ask & Save to History"):
+    #         if custom_question.strip():
+    #             try:
+    #                 validate_input(custom_question.strip())
+    #             except ValueError as e:
+    #                 st.warning(str(e))
+    #             else:
+    #                 with st.spinner("Querying RAG system..."):
+    #                     try:
+    #                         answer = ask_rules(custom_question.strip())
+    #                         st.session_state["rag_history"].append({
+    #                             "question": custom_question.strip(),
+    #                             "answer": answer,
+    #                             "timestamp": datetime.now(timezone.utc).isoformat(),
+    #                         })
+    #                         st.success("RAG Response:")
+    #                         st.markdown(answer)
+    #                     except Exception as e:
+    #                         st.error(f"RAG query failed: {e}")
 
-        if st.session_state.get("rag_history"):
-            st.markdown("---")
-            st.subheader("Query History")
-            for i, entry in enumerate(reversed(st.session_state["rag_history"])):
-                with st.expander(f"Q{len(st.session_state['rag_history']) - i}: {entry['question'][:80]}..."):
-                    st.markdown(f"**Question:** {entry['question']}")
-                    st.markdown(f"**Answer:** {entry['answer']}")
-                    st.caption(f"Queried at: {entry['timestamp']}")
+    #     if st.session_state.get("rag_history"):
+    #         st.markdown("---")
+    #         st.subheader("Query History")
+    #         for i, entry in enumerate(reversed(st.session_state["rag_history"])):
+    #             with st.expander(f"Q{len(st.session_state['rag_history']) - i}: {entry['question'][:80]}..."):
+    #                 st.markdown(f"**Question:** {entry['question']}")
+    #                 st.markdown(f"**Answer:** {entry['answer']}")
+    #                 st.caption(f"Queried at: {entry['timestamp']}")
 
-    # ---- Tab 3: Manage Index ----
-    with rag_tab3:
-        st.subheader("RAG Index Management")
+    # # ---- Tab 3: Manage Index ----
+    # with rag_tab3:
+    #     st.subheader("RAG Index Management")
 
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("**Reload RAG Index**")
-            st.markdown(
-                "Rebuild the vector index from rule files. "
-                "Use this after updating rule documents."
-            )
-            if st.button("🔄 Reload RAG Index", type="primary"):
-                with st.spinner("Reloading RAG index..."):
-                    try:
-                        reload_rules()
-                        st.success("RAG index reloaded successfully!")
-                    except FileNotFoundError as e:
-                        st.error(f"Failed: {e}")
-                    except Exception as e:
-                        st.error(f"Reload failed: {e}")
+    #     col1, col2 = st.columns(2)
+    #     with col1:
+    #         st.markdown("**Reload RAG Index**")
+    #         st.markdown(
+    #             "Rebuild the vector index from rule files. "
+    #             "Use this after updating rule documents."
+    #         )
+    #         if st.button("🔄 Reload RAG Index", type="primary"):
+    #             with st.spinner("Reloading RAG index..."):
+    #                 try:
+    #                     reload_rules()
+    #                     st.success("RAG index reloaded successfully!")
+    #                 except FileNotFoundError as e:
+    #                     st.error(f"Failed: {e}")
+    #                 except Exception as e:
+    #                     st.error(f"Reload failed: {e}")
 
-        with col2:
-            st.markdown("**Index Status**")
-            index_path = Path(RAG_PERSIST_DIR)
-            if index_path.exists():
-                index_files = list(index_path.rglob("*"))
-                st.success(f"Index directory exists: `{RAG_PERSIST_DIR}`")
-                st.write(f"Files in index: **{len(index_files)}**")
-            else:
-                st.warning("Index not yet created. Query the RAG or reload to initialize.")
+    #     with col2:
+    #         st.markdown("**Index Status**")
+    #         index_path = Path(RAG_PERSIST_DIR)
+    #         if index_path.exists():
+    #             index_files = list(index_path.rglob("*"))
+    #             st.success(f"Index directory exists: `{RAG_PERSIST_DIR}`")
+    #             st.write(f"Files in index: **{len(index_files)}**")
+    #         else:
+    #             st.warning("Index not yet created. Query the RAG or reload to initialize.")
 
-        st.markdown("---")
-        st.subheader("Rules Directory Info")
-        rules_path = Path(RULES_DIR)
-        if rules_path.exists():
-            md_files = list(rules_path.glob("*.md"))
-            txt_files = list(rules_path.glob("*.txt"))
-            st.write(f"📁 Rules directory: `{RULES_DIR}`")
-            st.write(f"- Markdown files: **{len(md_files)}**")
-            st.write(f"- Text files: **{len(txt_files)}**")
-            all_rule_files = md_files + txt_files
-            if all_rule_files:
-                file_info = []
-                for f in all_rule_files:
-                    content = f.read_text(encoding="utf-8")
-                    file_info.append({
-                        "File": f.name,
-                        "Size (bytes)": f.stat().st_size,
-                        "Lines": len(content.splitlines()),
-                    })
-                st.dataframe(pd.DataFrame(file_info), use_container_width=True)
-        else:
-            st.error(f"Rules directory not found: `{RULES_DIR}`")
+    #     st.markdown("---")
+    #     st.subheader("Rules Directory Info")
+    #     rules_path = Path(RULES_DIR)
+    #     if rules_path.exists():
+    #         md_files = list(rules_path.glob("*.md"))
+    #         txt_files = list(rules_path.glob("*.txt"))
+    #         st.write(f"📁 Rules directory: `{RULES_DIR}`")
+    #         st.write(f"- Markdown files: **{len(md_files)}**")
+    #         st.write(f"- Text files: **{len(txt_files)}**")
+    #         all_rule_files = md_files + txt_files
+    #         if all_rule_files:
+    #             file_info = []
+    #             for f in all_rule_files:
+    #                 content = f.read_text(encoding="utf-8")
+    #                 file_info.append({
+    #                     "File": f.name,
+    #                     "Size (bytes)": f.stat().st_size,
+    #                     "Lines": len(content.splitlines()),
+    #                 })
+    #             st.dataframe(pd.DataFrame(file_info), use_container_width=True)
+    #     else:
+    #         st.error(f"Rules directory not found: `{RULES_DIR}`")
 
 
 # ============================================================
