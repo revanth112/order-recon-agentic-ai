@@ -792,13 +792,19 @@ elif page == "RAG Management":
             "What happens if extraction confidence is below 0.8?",
             "What is the price tolerance when quantity matches exactly?",
         ]
-
+        
         selected_preset = st.selectbox("Preset questions", preset_questions, key="rag_preset")
-        custom_question = st.text_area(
-            "Question",
-            value="" if selected_preset == "(Custom question)" else selected_preset,
-            key="rag_question",
-        )
+        
+        if selected_preset == "(Custom question)":
+            custom_question = st.text_area(
+                "Your custom question",
+                placeholder="Type your question here...",
+                key="rag_question",
+            )
+        else:
+            # Use the preset question directly — no text area shown
+            custom_question = selected_preset
+            st.info(f"📌 Using preset question: _{selected_preset}_")
 
         if st.button("Ask RAG", type="primary"):
             if custom_question.strip():
