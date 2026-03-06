@@ -127,8 +127,58 @@ if page == "Upload & Run Pipeline":
     uploaded_file = st.file_uploader("Upload Invoice JSON", type=["json"])
 
     if uploaded_file is not None:
-        raw = uploaded_file.read().decode("utf-8")
-        invoice_json = json.loads(raw)
+        # --- Enforce .json extension (defense-in-depth) ----------------------
+        if not uploaded_file.name.lower().endswith(".json"):
+            st.error(
+                f"❌ Invalid file type: **{uploaded_file.name}**. "
+                "Only `.json` files are accepted."
+            )
+            st.stop()
+
+        # --- Decode and parse ------------------------------------------------
+        try:
+            raw = uploaded_file.read().decode("utf-8")
+        except UnicodeDecodeError as exc:
+            st.error(
+                f"❌ Could not read the file as UTF-8 text. "
+                f"Please ensure the file is a valid UTF-8 encoded JSON.\n\n`{exc}`"
+            )
+            st.stop()
+
+        try:
+            invoice_json = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            st.error(
+                f"❌ The uploaded file does not contain valid JSON.\n\n"
+                f"Parser error: `{exc}`"
+            )
+            st.stop()
+
+        if not isinstance(invoice_json, dict):
+            st.error(
+                "❌ The uploaded JSON must be an object (dict) at the top level, "
+                f"but got `{type(invoice_json).__name__}`."
+            )
+            st.stop()
+
+        # --- Validate required fields ----------------------------------------
+        missing_fields = []
+        if "vendor_id" not in invoice_json or not invoice_json["vendor_id"]:
+            missing_fields.append("`vendor_id`")
+        if (
+            "line_items" not in invoice_json
+            or not isinstance(invoice_json.get("line_items"), list)
+            or len(invoice_json["line_items"]) == 0
+        ):
+            missing_fields.append("`line_items` (must be a non-empty list)")
+
+        if missing_fields:
+            st.error(
+                "❌ The uploaded invoice JSON is missing required fields: "
+                + ", ".join(missing_fields)
+                + ". Please check the file and try again."
+            )
+            st.stop()
 
         st.subheader("Invoice Preview")
         st.json(invoice_json)

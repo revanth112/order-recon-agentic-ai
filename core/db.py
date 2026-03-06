@@ -1,4 +1,5 @@
 # core/db.py - SQLite connection and schema initialization
+import os
 import sqlite3
 from contextlib import contextmanager
 from .config import SQLITE_DB_PATH
@@ -7,6 +8,10 @@ from .config import SQLITE_DB_PATH
 @contextmanager
 def get_connection():
     """Context manager for SQLite connections with auto-commit and close."""
+    # Ensure the parent directory exists before connecting.
+    db_dir = os.path.dirname(os.path.abspath(SQLITE_DB_PATH))
+    os.makedirs(db_dir, exist_ok=True)
+
     conn = sqlite3.connect(SQLITE_DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
