@@ -343,7 +343,12 @@ if page == "Upload & Run Pipeline":
                 )
                 summary_text = llm_resp.choices[0].message.content.strip()
                 if summary_text:
-                    st.caption(f"💬 {summary_text}")
+                    import html as _html_mod
+                    safe_summary = _html_mod.escape(summary_text)
+                    st.markdown(
+                        f"<p style='font-size:18px;'>💬 {safe_summary}</p>",
+                        unsafe_allow_html=True,
+                    )
             except Exception as _llm_err:
                 import logging as _logging
                 _logging.getLogger(__name__).debug(
