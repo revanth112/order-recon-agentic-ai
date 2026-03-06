@@ -15,7 +15,7 @@ from core import logger as pipeline_logger
 from core.services import compute_template_hash, start_invoice_pipeline
 from core.metrics import get_dashboard_metrics
 from core.config import RULES_DIR, RAG_PERSIST_DIR, azure_openai_client, OPENAI_MODEL
-from core.rules_rag import ask_rules, reload_rules
+from core.rules_rag import ask_rules, reload_rules, validate_input
 from agents.graph import recon_graph
 from streamlit_app.log_viewer import render_log_viewer
 
@@ -343,7 +343,12 @@ if page == "Upload & Run Pipeline":
                 )
                 summary_text = llm_resp.choices[0].message.content.strip()
                 if summary_text:
-                    st.caption(f"💬 {summary_text}")
+                    import html as _html_mod
+                    safe_summary = _html_mod.escape(summary_text)
+                    st.markdown(
+                        f"<p style='font-size:18px;'>💬 {safe_summary}</p>",
+                        unsafe_allow_html=True,
+                    )
             except Exception as _llm_err:
                 import logging as _logging
                 _logging.getLogger(__name__).debug(
@@ -797,15 +802,20 @@ elif page == "RAG Management":
 
         if st.button("Ask RAG", type="primary"):
             if custom_question.strip():
-                with st.spinner("Querying RAG system..."):
-                    try:
-                        answer = ask_rules(custom_question.strip())
-                        st.success("RAG Response:")
-                        st.markdown(answer)
-                    except FileNotFoundError as e:
-                        st.error(f"RAG initialization failed: {e}")
-                    except Exception as e:
-                        st.error(f"RAG query failed: {e}")
+                try:
+                    validate_input(custom_question.strip())
+                except ValueError as e:
+                    st.warning(str(e))
+                else:
+                    with st.spinner("Querying RAG system..."):
+                        try:
+                            answer = ask_rules(custom_question.strip())
+                            st.success("RAG Response:")
+                            st.markdown(answer)
+                        except FileNotFoundError as e:
+                            st.error(f"RAG initialization failed: {e}")
+                        except Exception as e:
+                            st.error(f"RAG query failed: {e}")
             else:
                 st.warning("Please enter a question.")
 
@@ -815,18 +825,23 @@ elif page == "RAG Management":
 
         if st.button("Ask & Save to History"):
             if custom_question.strip():
-                with st.spinner("Querying RAG system..."):
-                    try:
-                        answer = ask_rules(custom_question.strip())
-                        st.session_state["rag_history"].append({
-                            "question": custom_question.strip(),
-                            "answer": answer,
-                            "timestamp": datetime.now(timezone.utc).isoformat(),
-                        })
-                        st.success("RAG Response:")
-                        st.markdown(answer)
-                    except Exception as e:
-                        st.error(f"RAG query failed: {e}")
+                try:
+                    validate_input(custom_question.strip())
+                except ValueError as e:
+                    st.warning(str(e))
+                else:
+                    with st.spinner("Querying RAG system..."):
+                        try:
+                            answer = ask_rules(custom_question.strip())
+                            st.session_state["rag_history"].append({
+                                "question": custom_question.strip(),
+                                "answer": answer,
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                            })
+                            st.success("RAG Response:")
+                            st.markdown(answer)
+                        except Exception as e:
+                            st.error(f"RAG query failed: {e}")
 
         if st.session_state.get("rag_history"):
             st.markdown("---")
