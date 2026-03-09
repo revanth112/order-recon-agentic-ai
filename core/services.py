@@ -26,6 +26,12 @@ logger = logging.getLogger(__name__)
 # quantities against ordered qty (e.g. 100.0000001 should not trigger duplicate billing)
 _DUPLICATE_BILLING_FLOAT_BUFFER = 1.001
 
+# Quantity tolerance applied to SKUs whose product code ends with "-BULK"
+_BULK_QTY_TOLERANCE = 0.10
+
+# Price tolerance applied when invoice quantity matches PO quantity exactly (0% qty variance)
+_EXACT_QTY_PRICE_TOLERANCE = 0.05
+
 
 def _safe_ask_rules(question: str) -> str:
     """Call RAG safely — return a default rule string if RAG is unavailable."""
@@ -218,7 +224,13 @@ def run_matcher(invoice_id: int, extracted_data: dict) -> Tuple[int, list]:
         qty_pct    = abs(qty_diff)   / ol["ordered_qty"]  if ol["ordered_qty"]  else 0
         price_pct  = abs(price_diff) / ol["unit_price"]   if ol["unit_price"]   else 0
 
-        if qty_pct <= qty_tol and price_pct <= price_tol:
+        # ── Rule 1: -BULK SKU gets 10% qty tolerance ──────────────────────
+        effective_qty_tol = _BULK_QTY_TOLERANCE if pcode.upper().endswith("-BULK") else qty_tol
+
+        # ── Rule 2: 5% price tolerance when qty matches exactly ───────────
+        effective_price_tol = _EXACT_QTY_PRICE_TOLERANCE if qty_diff == 0 else price_tol
+
+        if qty_pct <= effective_qty_tol and price_pct <= effective_price_tol:
             if qty_diff == 0 and price_diff == 0:
                 status = "MATCHED"
                 rule   = "Exact match"
@@ -226,8 +238,8 @@ def run_matcher(invoice_id: int, extracted_data: dict) -> Tuple[int, list]:
                 # WITHIN_TOLERANCE — auto-approve but create audit trail
                 status = "WITHIN_TOLERANCE"
                 rule = (
-                    f"Within vendor tolerance (qty_tol={qty_tol:.2%}, "
-                    f"price_tol={price_tol:.2%}): "
+                    f"Within vendor tolerance (qty_tol={effective_qty_tol:.2%}, "
+                    f"price_tol={effective_price_tol:.2%}): "
                     f"qty_diff={qty_diff:+}, price_diff={price_diff:+.4f}"
                 )
                 discrepancies.append({
@@ -246,12 +258,12 @@ def run_matcher(invoice_id: int, extracted_data: dict) -> Tuple[int, list]:
                 f"(diff={qty_pct:.1%}), "
                 f"invoice price={il['unit_price']} vs order price={ol['unit_price']} "
                 f"(diff={price_pct:.1%}). "
-                f"Vendor tolerances: qty={qty_tol:.2%}, price={price_tol:.2%}. "
+                f"Vendor tolerances: qty={effective_qty_tol:.2%}, price={effective_price_tol:.2%}. "
                 "What rule applies?"
             )
             status = "OUT_OF_TOLERANCE"
             discrepancies.append({
-                "type": "QUANTITY_MISMATCH" if qty_pct > qty_tol else "PRICE_MISMATCH",
+                "type": "QUANTITY_MISMATCH" if qty_pct > effective_qty_tol else "PRICE_MISMATCH",
                 "product_code": pcode,
                 "qty_diff": qty_diff,
                 "price_diff": round(price_diff, 4),
