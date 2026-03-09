@@ -89,6 +89,7 @@ NAV_ITEMS = [
     ("⚠️", "Exceptions Dashboard"),
     ("🧠", "RAG Management"),
     ("📈", "Observability Metrics"),
+    ("🏗️", "Project Architecture"),
 ]
 
 if "active_page" not in st.session_state:
@@ -945,3 +946,263 @@ elif page == "Observability Metrics":
             st.line_chart(chart_df2)
     else:
         st.info("No metrics data yet. Run the pipeline first.")
+
+# ============================================================
+# PAGE 7: Project Architecture
+# ============================================================
+elif page == "Project Architecture":
+    st.title("🏗️ Project Architecture")
+    st.markdown("Full system overview — agent pipeline, folder structure, database schema, and tech stack.")
+
+    arch_tab1, arch_tab2, arch_tab3, arch_tab4 = st.tabs([
+        "🔄 Agent Pipeline",
+        "📁 Folder Structure",
+        "🗄️ Database Schema",
+        "⚙️ Tech Stack",
+    ])
+
+    # ── Tab 1: Agent Pipeline ──────────────────────────────────────────────
+    with arch_tab1:
+        st.subheader("Multi-Agent Pipeline Flow")
+        st.markdown(
+            "The reconciliation pipeline is built on **LangGraph** — three agent nodes share a "
+            "`ReconState` TypedDict and are wired into a directed `StateGraph`."
+        )
+
+        st.markdown("""
+```
+Invoice JSON Input
+        |
+        v
+┌─────────────────────────────────────────────────────────────┐
+│  [Extractor Agent]                                          │
+│  • Calls Azure OpenAI GPT-4o                                │
+│  • Extracts structured invoice fields                       │
+│  • Validates with Pydantic v2                               │
+│  • Scores extraction confidence (0–1)                       │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     v
+┌─────────────────────────────────────────────────────────────┐
+│  [Matcher Agent]                                            │
+│  • Matches invoice lines to open PO lines by product_code  │
+│  • Applies price & quantity tolerance rules                 │
+│  • Queries RAG (FAISS + LangChain) for rule context        │
+│  • Classifies each line: MATCHED / MISMATCH / NO_MATCH     │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     v
+┌─────────────────────────────────────────────────────────────┐
+│  [Exception Handler]                                        │
+│  • Classifies discrepancies: CRITICAL / WARNING / INFO      │
+│  • Sets auto-action: BLOCKED / NEEDS_REVIEW / AUTO_APPROVED │
+│  • Persists results to SQLite                               │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     v
+        [SQLite DB]  +  [Streamlit UI Dashboard]
+```
+""")
+
+        st.divider()
+        st.subheader("Agent Node Details")
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.markdown("#### 🔍 Extractor Agent")
+            st.markdown("""
+- **Model:** Azure OpenAI GPT-4o
+- **Input:** Raw invoice JSON
+- **Output:** `ExtractedInvoice` Pydantic model
+- **Validates:** vendor_id, line_items, PO number, currency
+- **Confidence:** Scores extraction quality (0–1)
+- **Fallback:** Flags low-confidence extractions for human review
+""")
+        with col2:
+            st.markdown("#### 🔗 Matcher Agent")
+            st.markdown("""
+- **Input:** ExtractedInvoice + open PO lines from SQLite
+- **Matching:** Case-insensitive `product_code` exact match
+- **Tolerances:** Price ±2–5%, Quantity ±5–10% (vendor-specific)
+- **RAG:** Queries FAISS index for business rule context
+- **Output:** List of match results with discrepancy types
+""")
+        with col3:
+            st.markdown("#### ⚠️ Exception Handler")
+            st.markdown("""
+- **Input:** Match results + discrepancy list
+- **Severity:** CRITICAL → BLOCKED, WARNING → NEEDS_REVIEW, INFO → AUTO_APPROVED
+- **Persists:** Reconciliation record + exception rows to SQLite
+- **Auto-approve:** All lines matched/within tolerance + confidence ≥ 0.8
+- **Output:** Final pipeline status + exceptions
+""")
+
+        st.divider()
+        st.subheader("Reconciliation Rules")
+
+        rules_data = [
+            {"Rule": "1", "Name": "QTY_TOLERANCE_STANDARD",       "Description": "±5% qty variance allowed; ±10% for bulk -BULK SKUs"},
+            {"Rule": "2", "Name": "PRICE_TOLERANCE_STANDARD",      "Description": "±2% price variance; ±5% when qty matches exactly"},
+            {"Rule": "3", "Name": "PRODUCT_CODE_EXACT_MATCH",      "Description": "Case-insensitive exact product code match required"},
+            {"Rule": "4", "Name": "NO_MATCH_BLOCK",                "Description": "Unmatched product code → CRITICAL exception, DB update blocked"},
+            {"Rule": "5", "Name": "CURRENCY_CONSISTENCY",          "Description": "Invoice currency must match PO currency"},
+            {"Rule": "6", "Name": "CONFIDENCE_GUARDRAIL",          "Description": "Confidence < 0.8 → NEEDS_HUMAN_REVIEW, no DB update"},
+            {"Rule": "7", "Name": "AUTO_APPROVE_WITHIN_TOLERANCE", "Description": "All lines matched/within tolerance + confidence ≥ 0.8 → auto-approve"},
+            {"Rule": "8", "Name": "PARTIAL_MATCH_REVIEW",          "Description": "Mixed match → PARTIAL_MATCH status, WARNING exceptions raised"},
+        ]
+        st.dataframe(pd.DataFrame(rules_data), use_container_width=True, hide_index=True)
+
+    # ── Tab 2: Folder Structure ────────────────────────────────────────────
+    with arch_tab2:
+        st.subheader("Project Folder Structure")
+        st.markdown("""
+```
+order-recon-agentic-ai/
+├── streamlit_app/              ← UI Layer
+│   ├── app.py                  ← Main Streamlit app (7 pages)
+│   └── log_viewer.py           ← Pipeline log viewer component
+│
+├── agents/                     ← LangGraph Agent Layer
+│   ├── graph.py                ← Builds & compiles the LangGraph StateGraph
+│   ├── nodes.py                ← 3 agent node functions (extractor, matcher, exception_handler)
+│   └── state.py                ← ReconState TypedDict (shared agent state)
+│
+├── core/                       ← Business Logic Layer
+│   ├── config.py               ← Env vars, Azure OpenAI client, thresholds
+│   ├── db.py                   ← SQLite schema init & connection manager
+│   ├── repositories.py         ← All DB CRUD operations
+│   ├── services.py             ← Extractor & Matcher business logic
+│   ├── rules_rag.py            ← RAG engine (FAISS + embeddings + LangChain)
+│   ├── metrics.py              ← Observability metrics computation
+│   └── logger.py               ← Pipeline log persistence to SQLite
+│
+├── models/
+│   └── schemas.py              ← Pydantic models: ExtractedInvoice, InvoiceLine
+│
+├── rules/                      ← RAG Knowledge Base (Markdown)
+│   ├── reconciliation_rules.md
+│   ├── vendor_policies.md
+│   └── rag_training_docs.md
+│
+├── data/                       ← Runtime Data (git-ignored)
+│   ├── order_recon.db          ← SQLite database
+│   ├── demo_invoices/          ← 15 ready-to-upload test invoice JSONs
+│   └── rules_index/            ← FAISS vector index (persisted)
+│
+├── scripts/
+│   └── seed_data.py            ← Seeds 15 demo POs into SQLite
+│
+├── tests/                      ← Pytest test suite
+│   ├── test_db.py
+│   ├── test_extract.py
+│   ├── test_match.py
+│   ├── test_logging.py
+│   └── test_rag.py
+│
+├── requirements.txt
+└── .env                        ← Environment variables (not committed)
+```
+""")
+
+        st.divider()
+        st.subheader("Layer Responsibilities")
+
+        layers = [
+            {"Layer": "🖥️ UI (streamlit_app/)",    "Technology": "Streamlit",               "Responsibility": "7-page dashboard — upload, explore, track, exceptions, RAG, metrics, architecture"},
+            {"Layer": "🤖 Agents (agents/)",        "Technology": "LangGraph StateGraph",    "Responsibility": "3 nodes: extractor → matcher → exception_handler; shared ReconState"},
+            {"Layer": "⚙️ Core (core/)",            "Technology": "Python + SQLite",         "Responsibility": "Config, DB, CRUD repos, business logic services, RAG engine, metrics, logging"},
+            {"Layer": "📐 Models (models/)",        "Technology": "Pydantic v2",             "Responsibility": "Type-safe data contracts: ExtractedInvoice, InvoiceLine"},
+            {"Layer": "📚 Rules (rules/)",          "Technology": "Markdown + FAISS",        "Responsibility": "Business rule documents indexed into a local vector store for RAG retrieval"},
+            {"Layer": "🗄️ Data (data/)",           "Technology": "SQLite + JSON",           "Responsibility": "Runtime DB, demo invoice files, persisted FAISS index"},
+        ]
+        st.dataframe(pd.DataFrame(layers), use_container_width=True, hide_index=True)
+
+    # ── Tab 3: Database Schema ─────────────────────────────────────────────
+    with arch_tab3:
+        st.subheader("SQLite Database Schema")
+        st.markdown("All data is persisted in a local SQLite file (`data/order_recon.db`).")
+
+        tables = [
+            {"Table": "orders",               "Description": "Purchase Order headers (PO number, vendor, currency, status)"},
+            {"Table": "order_lines",          "Description": "Individual PO line items (product_code, qty, unit_price)"},
+            {"Table": "invoices",             "Description": "Uploaded invoice headers (vendor, status, extraction_confidence)"},
+            {"Table": "invoice_lines",        "Description": "Extracted invoice line items from GPT-4o"},
+            {"Table": "reconciliations",      "Description": "Reconciliation run records (overall_status, confidence, latency_ms)"},
+            {"Table": "reconciliation_lines", "Description": "Line-by-line match results (match_status, price/qty variance)"},
+            {"Table": "exceptions",           "Description": "Raised exceptions (type, severity, auto_action, resolved flag)"},
+            {"Table": "invoice_templates",    "Description": "Template hash fingerprints for invoice drift detection"},
+            {"Table": "pipeline_logs",        "Description": "Step-by-step pipeline execution logs (run_id, step, message)"},
+            {"Table": "metrics_runs",         "Description": "Per-run observability metrics (mismatch_rate, confidence, latency)"},
+        ]
+        st.dataframe(pd.DataFrame(tables), use_container_width=True, hide_index=True)
+
+        st.divider()
+        st.subheader("Entity Relationship Overview")
+        st.markdown("""
+```
+orders (1) ──────────────────────────── (N) order_lines
+   │
+   │  (matched via po_number)
+   │
+invoices (1) ────────────────────────── (N) invoice_lines
+   │
+   └── (1) reconciliations (1) ─────── (N) reconciliation_lines
+              │
+              └── (1) ─────────────── (N) exceptions
+                         │
+                         └── pipeline_logs  (run_id = reconciliation.run_id)
+                         └── metrics_runs   (run_id = reconciliation.run_id)
+
+invoice_templates  ── fingerprints for drift detection (linked via vendor_id)
+```
+""")
+
+    # ── Tab 4: Tech Stack ──────────────────────────────────────────────────
+    with arch_tab4:
+        st.subheader("Technology Stack")
+
+        tech_stack = [
+            {"Layer": "LLM",              "Technology": "Azure OpenAI GPT-4o",              "Purpose": "Structured invoice field extraction with Pydantic validation"},
+            {"Layer": "Embeddings",       "Technology": "Azure OpenAI text-embedding-ada-002", "Purpose": "Vectorises business rule documents for semantic retrieval"},
+            {"Layer": "Agent Framework",  "Technology": "LangGraph (StateGraph)",           "Purpose": "Orchestrates the 3-node agentic pipeline with shared state"},
+            {"Layer": "RAG",              "Technology": "LangChain + FAISS",                "Purpose": "Local vector index over rule Markdown files; retrieved at match-time"},
+            {"Layer": "Database",         "Technology": "SQLite (built-in Python)",         "Purpose": "Zero-dependency persistent store for all run data"},
+            {"Layer": "UI",               "Technology": "Streamlit",                        "Purpose": "7-page interactive dashboard"},
+            {"Layer": "Validation",       "Technology": "Pydantic v2",                     "Purpose": "Type-safe data contracts for extracted invoice fields"},
+            {"Layer": "Data Processing",  "Technology": "Pandas + NumPy",                  "Purpose": "DataFrame manipulation, CSV export, metrics aggregation"},
+            {"Layer": "Visualisation",    "Technology": "Plotly / Streamlit charts",        "Purpose": "Mismatch rate, confidence, and latency time-series charts"},
+            {"Layer": "Testing",          "Technology": "Pytest",                           "Purpose": "Unit & integration tests across DB, extraction, matching, RAG, logging"},
+        ]
+        st.dataframe(pd.DataFrame(tech_stack), use_container_width=True, hide_index=True)
+
+        st.divider()
+        st.subheader("Key Environment Variables")
+
+        env_vars = [
+            {"Variable": "AZURE_OPENAI_API_KEY",    "Description": "Azure OpenAI API key"},
+            {"Variable": "AZURE_OPENAI_ENDPOINT",   "Description": "Azure OpenAI endpoint URL"},
+            {"Variable": "AZURE_OPENAI_API_VERSION","Description": "API version (e.g. 2024-12-01)"},
+            {"Variable": "AZURE_CHAT_DEPLOYMENT",   "Description": "Chat model deployment name (e.g. gpt-4o)"},
+            {"Variable": "AZURE_EMBED_DEPLOYMENT",  "Description": "Embedding model deployment name (e.g. text-embedding-ada-002)"},
+            {"Variable": "SQLITE_DB_PATH",          "Description": "Path to SQLite database file"},
+            {"Variable": "CONFIDENCE_THRESHOLD",    "Description": "Min extraction confidence to auto-approve (default: 0.8)"},
+            {"Variable": "PRICE_TOLERANCE_PCT",     "Description": "Default price tolerance percentage (default: 0.05)"},
+            {"Variable": "QTY_TOLERANCE_PCT",       "Description": "Default quantity tolerance percentage (default: 0.05)"},
+            {"Variable": "RULES_DIR",               "Description": "Path to RAG rule documents directory"},
+            {"Variable": "RAG_PERSIST_DIR",         "Description": "Path to persisted FAISS vector index"},
+        ]
+        st.dataframe(pd.DataFrame(env_vars), use_container_width=True, hide_index=True)
+
+        st.divider()
+        st.subheader("UI Pages Overview")
+
+        pages = [
+            {"Page": "🚀 Upload & Run Pipeline",  "Description": "Upload invoice JSON, run multi-agent pipeline with live stepper UI"},
+            {"Page": "🗄️ Database Explorer",      "Description": "Browse & filter all 10 SQLite tables; export CSV"},
+            {"Page": "📦 Order Tracker",           "Description": "Invoice history, reconciliation details, line drill-down, pipeline logs"},
+            {"Page": "⚠️ Exceptions Dashboard",   "Description": "Unresolved & all exceptions; severity filters; resolve workflow; export"},
+            {"Page": "🧠 RAG Management",          "Description": "View business rule Markdown documents loaded into the FAISS index"},
+            {"Page": "📈 Observability Metrics",   "Description": "Mismatch rate, extraction confidence, latency charts over time"},
+            {"Page": "🏗️ Project Architecture",   "Description": "This page — full system overview, folder structure, DB schema, tech stack"},
+        ]
+        st.dataframe(pd.DataFrame(pages), use_container_width=True, hide_index=True)
