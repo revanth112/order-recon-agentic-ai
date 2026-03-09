@@ -153,7 +153,7 @@ def _render_log_table(df: pd.DataFrame):
 
   st.dataframe(
     df_show,
-    use_container_width=True,
+    width='content',
     column_config={
       'level': st.column_config.TextColumn('Level', width='small'),
       'agent': st.column_config.TextColumn('Agent', width='medium'),

@@ -101,7 +101,7 @@ for icon, label in NAV_ITEMS:
     is_active = page == label
     if is_active:
         st.sidebar.markdown("<div class='nav-active'>", unsafe_allow_html=True)
-    clicked = st.sidebar.button(f"{icon}  {label}", key=f"nav_{label}", use_container_width=True)
+    clicked = st.sidebar.button(f"{icon}  {label}", key=f"nav_{label}")
     if is_active:
         st.sidebar.markdown("</div>", unsafe_allow_html=True)
     if clicked:
@@ -372,7 +372,7 @@ if page == "Upload & Run Pipeline":
         lines = repo.get_invoice_lines(invoice_id)
         if lines:
             st.subheader("Extracted Invoice Lines")
-            st.dataframe(pd.DataFrame(lines))
+            st.dataframe(pd.DataFrame(lines), width='content')
 
 
 # ============================================================
@@ -446,7 +446,7 @@ elif page == "Database Explorer":
             df = df[df[filter_column].astype(str).str.contains(filter_value, case=False, na=False)]
             st.caption(f"Showing {len(df)} row(s) matching **{filter_column}** contains '{filter_value}'")
 
-        st.dataframe(df, use_container_width=True)
+        st.dataframe(df, width='content')
 
         # Export
         csv = df.to_csv(index=False)
@@ -483,7 +483,7 @@ elif page == "Order Tracker":
             display_cols = [c for c in ["id", "invoice_number", "vendor_id", "vendor_name",
                                         "status", "extraction_confidence", "created_at"]
                            if c in inv_df.columns]
-            st.dataframe(inv_df[display_cols], use_container_width=True)
+            st.dataframe(inv_df[display_cols], width='content')
 
             # Drill into a specific invoice
             st.markdown("---")
@@ -506,13 +506,13 @@ elif page == "Order Tracker":
                     lines = repo.get_invoice_lines(selected_inv_id)
                     if lines:
                         st.markdown("**Extracted Invoice Lines:**")
-                        st.dataframe(pd.DataFrame(lines), use_container_width=True)
+                        st.dataframe(pd.DataFrame(lines), width='content')
 
                     # Linked reconciliations
                     recons = repo.get_reconciliations_for_invoice(selected_inv_id)
                     if recons:
                         st.markdown("**Reconciliation Runs:**")
-                        st.dataframe(pd.DataFrame(recons), use_container_width=True)
+                        st.dataframe(pd.DataFrame(recons), width='content')
 
                     # Linked exceptions
                     for recon in recons:
@@ -520,7 +520,7 @@ elif page == "Order Tracker":
                         if exceptions:
                             st.markdown(f"**Exceptions for Reconciliation #{recon['id']}:**")
                             exc_df = pd.DataFrame(exceptions)
-                            st.dataframe(exc_df, use_container_width=True)
+                            st.dataframe(exc_df, width='content')
 
     # ---- Tab 2: Reconciliation Details ----
     with tracker_tab2:
@@ -535,7 +535,7 @@ elif page == "Order Tracker":
                                         "reconciliation_confidence", "latency_ms",
                                         "started_at", "completed_at"]
                            if c in recon_df.columns]
-            st.dataframe(recon_df[display_cols], use_container_width=True)
+            st.dataframe(recon_df[display_cols], width='content')
 
             # Status summary
             if "overall_status" in recon_df.columns:
@@ -570,7 +570,7 @@ elif page == "Order Tracker":
                 recon_lines = repo.get_reconciliation_lines(selected_recon_id)
                 if recon_lines:
                     st.markdown("**Line-by-Line Match Results:**")
-                    st.dataframe(pd.DataFrame(recon_lines), use_container_width=True)
+                    st.dataframe(pd.DataFrame(recon_lines), width='content')
                 else:
                     st.info("No reconciliation lines for this run.")
 
@@ -578,7 +578,7 @@ elif page == "Order Tracker":
                 if exceptions:
                     st.markdown("**Exceptions:**")
                     exc_df = pd.DataFrame(exceptions)
-                    st.dataframe(exc_df, use_container_width=True)
+                    st.dataframe(exc_df, width='content')
 
     # ---- Tab 3: Pipeline Logs ----
     with tracker_tab3:
@@ -666,7 +666,7 @@ elif page == "Exceptions Dashboard":
                     })
 
                 exc_df = pd.DataFrame(table_rows)
-                st.dataframe(exc_df, use_container_width=True, hide_index=True)
+                st.dataframe(exc_df, width='content', hide_index=True)
 
                 # ── Resolve section ───────────────────────────────────────────
                 st.divider()
@@ -681,7 +681,7 @@ elif page == "Exceptions Dashboard":
                     resolved_by = st.text_input("Your name", placeholder="Enter your name...", key="resolve_exc_by")
                 with r_col3:
                     st.markdown("<br>", unsafe_allow_html=True)
-                    if st.button("✅ Mark Resolved", type="primary", key="resolve_exc_btn", use_container_width=True):
+                    if st.button("✅ Mark Resolved", type="primary", key="resolve_exc_btn"):
                         if resolved_by.strip():
                             resolved_at = datetime.now(timezone.utc).isoformat()
                             repo.resolve_exception(selected_exc_id, resolved_by.strip(), resolved_at)
@@ -729,7 +729,7 @@ elif page == "Exceptions Dashboard":
             resolved_count = int(pd.to_numeric(df_exc["resolved"], errors="coerce").fillna(0).sum()) if "resolved" in df_exc.columns else 0
             col2.metric("Resolved", resolved_count)
 
-            st.dataframe(df_exc, use_container_width=True, hide_index=True)
+            st.dataframe(df_exc, width='content', hide_index=True)
 
             # Severity breakdown chart
             if "severity" in df_exc.columns:
@@ -910,7 +910,7 @@ elif page == "RAG Management":
     #                     "Size (bytes)": f.stat().st_size,
     #                     "Lines": len(content.splitlines()),
     #                 })
-    #             st.dataframe(pd.DataFrame(file_info), use_container_width=True)
+    #             st.dataframe(pd.DataFrame(file_info), width='content')
     #     else:
     #         st.error(f"Rules directory not found: `{RULES_DIR}`")
 
@@ -933,7 +933,7 @@ elif page == "Observability Metrics":
     if metrics.get("history"):
         st.subheader("Run History")
         df = pd.DataFrame(metrics["history"])
-        st.dataframe(df, use_container_width=True)
+        st.dataframe(df, width='content')
 
         st.subheader("Mismatch Rate Over Time")
         if "run_timestamp" in df.columns and "mismatch_rate" in df.columns:
@@ -941,7 +941,7 @@ elif page == "Observability Metrics":
             st.line_chart(chart_df)
 
         st.subheader("Extraction Confidence Over Time")
-        if "avg_extraction_confidence" in df.columns:
+        if "run_timestamp" in df.columns and "avg_extraction_confidence" in df.columns:
             chart_df2 = df[["run_timestamp", "avg_extraction_confidence"]].set_index("run_timestamp")
             st.line_chart(chart_df2)
     else:
@@ -1050,7 +1050,7 @@ Invoice JSON Input
             {"Rule": "7", "Name": "AUTO_APPROVE_WITHIN_TOLERANCE", "Description": "All lines matched/within tolerance + confidence ≥ 0.8 → auto-approve"},
             {"Rule": "8", "Name": "PARTIAL_MATCH_REVIEW",          "Description": "Mixed match → PARTIAL_MATCH status, WARNING exceptions raised"},
         ]
-        st.dataframe(pd.DataFrame(rules_data), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(rules_data), width='content', hide_index=True)
 
     # ── Tab 2: Folder Structure ────────────────────────────────────────────
     with arch_tab2:
@@ -1115,7 +1115,7 @@ order-recon-agentic-ai/
             {"Layer": "📚 Rules (rules/)",          "Technology": "Markdown + FAISS",        "Responsibility": "Business rule documents indexed into a local vector store for RAG retrieval"},
             {"Layer": "🗄️ Data (data/)",           "Technology": "SQLite + JSON",           "Responsibility": "Runtime DB, demo invoice files, persisted FAISS index"},
         ]
-        st.dataframe(pd.DataFrame(layers), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(layers), width='content', hide_index=True)
 
     # ── Tab 3: Database Schema ─────────────────────────────────────────────
     with arch_tab3:
@@ -1134,7 +1134,7 @@ order-recon-agentic-ai/
             {"Table": "pipeline_logs",        "Description": "Step-by-step pipeline execution logs (run_id, step, message)"},
             {"Table": "metrics_runs",         "Description": "Per-run observability metrics (mismatch_rate, confidence, latency)"},
         ]
-        st.dataframe(pd.DataFrame(tables), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(tables), width='content', hide_index=True)
 
         st.divider()
         st.subheader("Entity Relationship Overview")
@@ -1173,7 +1173,7 @@ invoice_templates  ── fingerprints for drift detection (linked via vendor_id
             {"Layer": "Visualisation",    "Technology": "Plotly / Streamlit charts",        "Purpose": "Mismatch rate, confidence, and latency time-series charts"},
             {"Layer": "Testing",          "Technology": "Pytest",                           "Purpose": "Unit & integration tests across DB, extraction, matching, RAG, logging"},
         ]
-        st.dataframe(pd.DataFrame(tech_stack), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(tech_stack), width='content', hide_index=True)
 
         st.divider()
         st.subheader("Key Environment Variables")
@@ -1191,7 +1191,7 @@ invoice_templates  ── fingerprints for drift detection (linked via vendor_id
             {"Variable": "RULES_DIR",               "Description": "Path to RAG rule documents directory"},
             {"Variable": "RAG_PERSIST_DIR",         "Description": "Path to persisted FAISS vector index"},
         ]
-        st.dataframe(pd.DataFrame(env_vars), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(env_vars), width='content', hide_index=True)
 
         st.divider()
         st.subheader("UI Pages Overview")
@@ -1205,4 +1205,4 @@ invoice_templates  ── fingerprints for drift detection (linked via vendor_id
             {"Page": "📈 Observability Metrics",   "Description": "Mismatch rate, extraction confidence, latency charts over time"},
             {"Page": "🏗️ Project Architecture",   "Description": "This page — full system overview, folder structure, DB schema, tech stack"},
         ]
-        st.dataframe(pd.DataFrame(pages), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(pages), width='content', hide_index=True)
