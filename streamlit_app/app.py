@@ -372,7 +372,7 @@ if page == "Upload & Run Pipeline":
         lines = repo.get_invoice_lines(invoice_id)
         if lines:
             st.subheader("Extracted Invoice Lines")
-            st.dataframe(pd.DataFrame(lines))
+            st.dataframe(pd.DataFrame(lines), width='content')
 
 
 # ============================================================
@@ -941,7 +941,7 @@ elif page == "Observability Metrics":
             st.line_chart(chart_df)
 
         st.subheader("Extraction Confidence Over Time")
-        if "avg_extraction_confidence" in df.columns:
+        if "run_timestamp" in df.columns and "avg_extraction_confidence" in df.columns:
             chart_df2 = df[["run_timestamp", "avg_extraction_confidence"]].set_index("run_timestamp")
             st.line_chart(chart_df2)
     else:
