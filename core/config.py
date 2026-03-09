@@ -8,13 +8,16 @@ load_dotenv()
 
 # ------------------------------------------------------------------
 # Azure OpenAI client (OpenAI SDK v1.x + Azure AI Foundry base_url)
-# ------------------------------------------------------------------
-AZURE_OPENAI_API_KEY  = os.getenv("AZURE_OPENAI_API_KEY")
-AZURE_OPENAI_ENDPOINT = os.getenv(
-    "AZURE_OPENAI_ENDPOINT",
-    "https://YOUR-RESOURCE.cognitiveservices.azure.com/"
-)
-AZURE_OPENAI_API_VERSION  = os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
+# # ------------------------------------------------------------------
+# AZURE_OPENAI_API_KEY  = os.getenv("AZURE_OPENAI_API_KEY")
+# AZURE_OPENAI_ENDPOINT = os.getenv(
+#     "AZURE_OPENAI_ENDPOINT",
+#     "https://YOUR-RESOURCE.cognitiveservices.azure.com/"
+# )
+# AZURE_OPENAI_API_VERSION  = os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
+AZURE_OPENAI_ENDPOINT = os.environ.get("AZURE_OPENAI_ENDPOINT")
+AZURE_OPENAI_API_KEY = os.environ.get("AZURE_OPENAI_API_KEY")
+AZURE_OPENAI_API_VERSION  = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
 # Deployment / model name as set in Azure AI Foundry
 OPENAI_MODEL = os.getenv("AZURE_CHAT_DEPLOYMENT", "gpt-4o")
 AZURE_EMBED_DEPLOYMENT = os.getenv("AZURE_EMBED_DEPLOYMENT", "text-embedding-ada-002")
