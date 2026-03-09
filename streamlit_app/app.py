@@ -29,6 +29,32 @@ st.set_page_config(
 # --- Init DB on startup ---
 init_db()
 
+# --- Auto-seed if DB is empty (for Streamlit Cloud / ephemeral hosting) ---
+import logging as _logging
+
+def _auto_seed_if_empty() -> None:
+    """Seed demo data automatically when the orders table is empty.
+
+    Safe to call on every Streamlit rerun — the row-count guard prevents
+    re-seeding an already-populated database, so live user data is never wiped.
+    """
+    try:
+        with get_connection() as _conn:
+            row_count = _conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
+        if row_count == 0:
+            # Ensure project root is on sys.path so scripts/ can import core.*
+            _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            if _root not in sys.path:
+                sys.path.insert(0, _root)
+            from scripts.seed_data import main as _seed_main
+            _seed_main()
+    except Exception as _seed_err:
+        _logging.getLogger(__name__).warning(
+            "Auto-seed skipped due to error: %s", _seed_err
+        )
+
+_auto_seed_if_empty()
+
 # --- Sidebar navigation ---
 # ── Sidebar styling ──────────────────────────────────────────────────────────
 st.markdown("""
